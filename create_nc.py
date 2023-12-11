@@ -5,7 +5,10 @@ import netCDF4 as nc
 # %%
 # Edit these variables with needed information about data being processed
 fn = '/home/maureenjcohen/lmd_data/standard_xtra.nc' # Path to file with model output
-outputdir = '/home/maureenjcohen/misc_data/'
+outputdir = '/home/maureenjcohen/misc_data/' # Where to save new files
+experiment_name = 'VenusTest' # For labelling new files
+t_select = (0,5) # Range of times to be included
+h_select = (0,-1) # Range of heights to be included
 rho = 65 # Density of atmosphere in kg/m3
 g_constant = 8.87 # Gravitational constant of planet in m/s2
 # If your atmospheric density varies significantly within the model domain,
@@ -18,10 +21,8 @@ heights = np.array([0.00, 0.03, 0.12, 0.32, 0.68, 1.23, 2.03, 3.10, 4.50, 6.23, 
 # Heights of Venus model output in m
 
 ### Functions for reorganising and reformatting LMD Planets simulation output
-
-
 # %%
-def make_file(ncout, winddata, times, hghts, lats, lons, time_len, windtype='U'):
+def make_file(ncout, winddata, times, hghts, lats, lons, time_len, windtype):
     """ Make an individual netCDF file from an empty Dataset"""
     # Create the dimensions of the new file, same as the old file
     ncout.createDimension('time', len(times))
@@ -55,11 +56,16 @@ def make_file(ncout, winddata, times, hghts, lats, lons, time_len, windtype='U')
     windout.units = 'm/s'
     windout.interval_write = str(time_len)
 
+    print(windout)
+    print(winddata.shape)
+
     windout[:,:,:,:] = winddata
     latitude[:] = lats
     longitude[:] = lons
     height[:] = hghts
     time[:] = times
+    print('File written for: ' + str(windtype))
+
  # %%
 def extract_metadata(ncfile):
     """ Input a netcdf4 file and extract the metadata that will be used
@@ -109,15 +115,22 @@ def process_data(windcube, windunits, windtype):
 
     return windout
 # %%
-def selector():
+def selector(ncfile, inputtimes, inputheights, trange=(0,-1), hrange=(0,-1)):
     """ Function that selects subsets of the data to include in the Parcels
         input files
         e.g. a subset of the time range, or a subset of the height levels """
     
+    ucube = ncfile['vitu'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
+    vcube = ncfile['vitv'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
+    wcube = ncfile['vitw'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
 
+    select_times = inputtimes[trange[0]:trange[-1]]
+    select_heights = inputheights[hrange[0]:hrange[-1]]
+
+    return ucube, vcube, wcube, select_times, select_heights
 
 # %%
-def run_preprocess(inputfile, savedir):
+def run_preprocess(inputfile, savedir, testname):
 
     """ Input the path to a file containing LMD Planets simulation data
         Input directory into which to save preprocessed files for Parcels
@@ -125,11 +138,28 @@ def run_preprocess(inputfile, savedir):
     
     lons, lats, times, t_interval = extract_metadata(inputfile)
 
-    
+    ucube, vcube, wcube, selected_times, selected_heights = selector(inputfile, times, heights, trange=t_select, hrange=h_select)
 
-""" if __name__ == "__main__":
+    u_data = process_data(ucube, 'm/s', 'U')
+    v_data = process_data(vcube, 'm/s', 'V')
+    w_data = process_data(wcube, 'Pa/s', 'W')
+
+    u_out = nc.Dataset(savedir + testname + '_U.nc', 'w', format='NETCDF4')
+    make_file(u_out, u_data, selected_times, selected_heights, lats, lons, t_interval, 'U')
+    u_out.close(); del u_out
+    v_out = nc.Dataset(savedir + testname + '_V.nc', 'w', format='NETCDF4')
+    make_file(v_out, v_data, selected_times, selected_heights, lats, lons, t_interval, 'V')
+    v_out.close(); del v_out
+    w_out = nc.Dataset(savedir + testname + '_W.nc', 'w', format='NETCDF4')
+    make_file(w_out, w_data, selected_times, selected_heights, lats, lons, t_interval, 'W')    
+    w_out.close(); del w_out
+
+# %%
+if __name__ == "__main__":
 
     ds = nc.Dataset(fn)
 
-    run_preprocess(ds, outputdir) """
+    run_preprocess(ds, outputdir, experiment_name)
     
+
+# %%
