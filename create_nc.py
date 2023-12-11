@@ -56,9 +56,6 @@ def make_file(ncout, winddata, times, hghts, lats, lons, time_len, windtype):
     windout.units = 'm/s'
     windout.interval_write = str(time_len)
 
-    print(windout)
-    print(winddata.shape)
-
     windout[:,:,:,:] = winddata
     latitude[:] = lats
     longitude[:] = lons
