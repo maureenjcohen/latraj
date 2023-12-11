@@ -1,12 +1,13 @@
 # %%
 import numpy as np
 import netCDF4 as nc
+from datetime import datetime, timedelta
 
 # %%
 # Edit these variables with needed information about data being processed
 fn = '/home/maureenjcohen/lmd_data/standard_xtra.nc' # Path to file with model output
-outputdir = '/home/maureenjcohen/misc_data/' # Where to save new files
 experiment_name = 'VenusTest' # For labelling new files
+outputdir = '/home/maureenjcohen/misc_data/' + experiment_name
 t_select = (0,5) # Range of times to be included
 h_select = (0,-1) # Range of heights to be included
 rho = 65 # Density of atmosphere in kg/m3
@@ -22,10 +23,11 @@ heights = np.array([0.00, 0.03, 0.12, 0.32, 0.68, 1.23, 2.03, 3.10, 4.50, 6.23, 
 
 ### Functions for reorganising and reformatting LMD Planets simulation output
 # %%
-def make_file(ncout, winddata, times, hghts, lats, lons, time_len, windtype):
+def make_file(ncout, step, udata, vdata, wdata, hghts, lats, lons, 
+              time_len):
     """ Make an individual netCDF file from an empty Dataset"""
     # Create the dimensions of the new file, same as the old file
-    ncout.createDimension('time', len(times))
+    ncout.createDimension('time', 1)
     ncout.createDimension('height', len(hghts))  
     ncout.createDimension('lat', len(lats))
     ncout.createDimension('lon', len(lons))
@@ -48,20 +50,36 @@ def make_file(ncout, winddata, times, hghts, lats, lons, time_len, windtype):
     
     # Create variable to hold timestamps
     time = ncout.createVariable('Time', 'float32', ('time',))
-    time.units = 'seconds since 0000-01-01 00:00:00'
+    time.units = 'seconds since 1987-03-30 00:00:00'
 
-    # Now create the variable that will hold your wind data, either U, V, or W
+    # Now create the variables that will hold your wind data
     # Note: W input data must be in m/s (model output is in Pa/s)
-    windout = ncout.createVariable(f'{windtype}', 'float32', ('time', 'height', 'lat', 'lon'))
-    windout.units = 'm/s'
-    windout.interval_write = str(time_len)
+    uout = ncout.createVariable('U', 'float32', ('time', 'height', 'lat', 'lon'))
+    uout.units = 'm/s'
+    uout.interval_write = str(time_len)
+    uout[:,:,:,:] = udata
 
-    windout[:,:,:,:] = winddata
+    vout = ncout.createVariable('V', 'float32', ('time', 'height', 'lat', 'lon'))
+    vout.units = 'm/s'
+    vout.interval_write = str(time_len)
+    vout[:,:,:,:] = vdata
+
+    wout = ncout.createVariable('W', 'float32', ('time', 'height', 'lat', 'lon'))
+    wout.units = 'm/s'
+    wout.interval_write = str(time_len)
+    wout[:,:,:,:] = wdata
+
+    # Fill in the dimensions with the arrays from the original sim files
     latitude[:] = lats
     longitude[:] = lons
     height[:] = hghts
-    time[:] = times
-    print('File written for: ' + str(windtype))
+
+    # Now do some funky time stuff
+    secs_passed = step*time_len # Number of secs passed since start of sim
+    secs = timedelta(seconds=secs_passed)
+    date = datetime(1987,3,30) + secs # Add time passed to start date
+    time[:] = nc.date2num(date, time.units)
+    print('File written for:', time[:], time.units)
 
  # %%
 def extract_metadata(ncfile):
@@ -141,15 +159,13 @@ def run_preprocess(inputfile, savedir, testname):
     v_data = process_data(vcube, 'm/s', 'V')
     w_data = process_data(wcube, 'Pa/s', 'W')
 
-    u_out = nc.Dataset(savedir + testname + '_U.nc', 'w', format='NETCDF4')
-    make_file(u_out, u_data, selected_times, selected_heights, lats, lons, t_interval, 'U')
-    u_out.close(); del u_out
-    v_out = nc.Dataset(savedir + testname + '_V.nc', 'w', format='NETCDF4')
-    make_file(v_out, v_data, selected_times, selected_heights, lats, lons, t_interval, 'V')
-    v_out.close(); del v_out
-    w_out = nc.Dataset(savedir + testname + '_W.nc', 'w', format='NETCDF4')
-    make_file(w_out, w_data, selected_times, selected_heights, lats, lons, t_interval, 'W')    
-    w_out.close(); del w_out
+    for i in range(0,len(selected_times)):
+        ncout = nc.Dataset(savedir + '/' + testname + f'_{i}.nc',
+                           'w', format='NETCDF4')
+        make_file(ncout, i, u_data[i,:,:,:], v_data[i,:,:,:],
+                   w_data[i,:,:,:], selected_heights, 
+                  lats, lons, t_interval)
+    ncout.close(); del ncout
 
 # %%
 if __name__ == "__main__":
