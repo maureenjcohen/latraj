@@ -5,20 +5,20 @@ from datetime import datetime, timedelta
 
 # %%
 # Edit these variables with needed information about data being processed
-fn = '/home/maureenjcohen/lmd_data/standard_xtra.nc' # Path to file with model output
+fn = '/exomars/data/internal/working/mc5526/VPCM_age_of_air/aoa35_96x96x50/Xins_141to145.nc' # Path to file with model output
 experiment_name = 'VenusTest' # For labelling new files
-outputdir = '/home/maureenjcohen/misc_data/' + experiment_name
+outputdir = '/exomars/projects/mc5526/lagrangian_trajectory/' + experiment_name
 t_select = (0,5) # Range of times to be included
-h_select = (0,-1) # Range of heights to be included
-rho = 65 # Density of atmosphere in kg/m3
+h_select = (0,None) # Range of heights to be included
+rho = 65 # Density of atmosphere in kg/m3 - only needed if vertical wind is in Pa/s (for conversion)
 g_constant = 8.87 # Gravitational constant of planet in m/s2
 # If your atmospheric density varies significantly within the model domain,
 # you will have to get a density cube
-heights = np.array([0.00, 0.03, 0.12, 0.32, 0.68, 1.23, 2.03, 3.10, 4.50, 6.23, 8.35,
-               10.8, 13.7, 17.0, 20.7, 24.6, 28.3, 31.9, 35.2, 38.4, 41.4, 44.2,
-               46.9, 49.5, 51.9, 54.1, 56.2, 58.1, 60.1, 61.9, 63.7, 65.5, 67.2,
-               68.8, 70.5, 72.2, 73.8, 75.5, 77.1, 78.7, 80.2, 81.8, 83.3, 84.8,
-               86.2, 87.8, 90.1, 92.9, 94.9, 101.])*1e3 
+heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  8.6,
+       11.1, 14., 17.3, 20.9, 24.7, 28.5, 32.1, 35.4, 38.6, 41.6, 44.4,
+       47.1, 49.7, 52.1, 54.3, 56.4, 58.4, 60.3, 62.1, 63.9, 65.6, 67.4,
+       69., 70.7, 72.3, 73.9, 75.4, 76.9, 78.4, 79.8, 81.2, 82.6, 84.,
+       85.3, 86.8, 88.7, 91.2, 94.1, 97.])*1e3 
 # Heights of Venus model output in m
 
 ### Functions for reorganising and reformatting LMD Planets simulation output
@@ -53,7 +53,7 @@ def make_file(ncout, step, udata, vdata, wdata, hghts, lats, lons,
     time.units = 'seconds since 1987-03-30 00:00:00'
 
     # Now create the variables that will hold your wind data
-    # Note: W input data must be in m/s (model output is in Pa/s)
+    # Note: W input data must be in m/s
     uout = ncout.createVariable('U', 'float32', ('time', 'height', 'lat', 'lon'))
     uout.units = 'm/s'
     uout.interval_write = str(time_len)
@@ -99,12 +99,9 @@ def extract_metadata(ncfile):
 def process_data(windcube, windunits, windtype):
     """ The LMD output data needs to be made compatible with Parcels requirements.
     
-    Steps: 1. Parcels accepts Arakawa C-grids (LMD grid type), but the grid indexing
-              is different. The data cube needs to be shifted to match what Parcels
-              expects. We shift up one row and discard the pole to achieve this.
-           2. Parcels accepts vertical wind in m/s, not pressure vertical velocity
-              in Pa/s, so this cube needs to be converted (based on hydrostatic
-              relationship)"""
+    Steps:  1. Extract the relevant wind cube
+            2. If the vertical wind is in Pa/s, convert to m/s
+                                                                        """
     
     if windtype=='W':
         print('Processing upward wind')
@@ -114,6 +111,7 @@ def process_data(windcube, windunits, windtype):
             winddata = -1*w_wind/(rho*g_constant)
         elif windunits == 'm/s':
             print('Wind units are m/s, good to go')
+            winddata = windcube[:]
         else:
             print('Cannot parse wind units')
     elif windtype=='V':
@@ -125,22 +123,22 @@ def process_data(windcube, windunits, windtype):
     else:
         print('Invalid wind type, must be U, V, or W')
 
-    windout = np.roll(winddata, 1, axis=2) # Shift cube 1 row up Y-axis (latitudes)
-    windout[:,:,0,:] = 0 # Fill the emptied latitude row with 0s 
+    # windout = np.roll(winddata, 1, axis=2) # Shift cube 1 row up Y-axis (latitudes)
+    # windout[:,:,0,:] = 0 # Fill the emptied latitude row with 0s 
 
-    return windout
+    return winddata
 # %%
-def selector(ncfile, inputtimes, inputheights, trange=(0,-1), hrange=(0,-1)):
+def selector(ncfile, inputtimes, inputheights, trange=(0,None), hrange=(0,None)):
     """ Function that selects subsets of the data to include in the Parcels
         input files
         e.g. a subset of the time range, or a subset of the height levels """
     
     ucube = ncfile['vitu'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
     vcube = ncfile['vitv'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
-    wcube = ncfile['vitw'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
+    wcube = ncfile['vitwz'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
 
-    select_times = inputtimes[trange[0]:trange[-1]]
-    select_heights = inputheights[hrange[0]:hrange[-1]]
+    select_times = inputtimes[trange[0]:trange[1]]
+    select_heights = inputheights[hrange[0]:hrange[1]]
 
     return ucube, vcube, wcube, select_times, select_heights
 
@@ -157,7 +155,7 @@ def run_preprocess(inputfile, savedir, testname):
 
     u_data = process_data(ucube, 'm/s', 'U')
     v_data = process_data(vcube, 'm/s', 'V')
-    w_data = process_data(wcube, 'Pa/s', 'W')
+    w_data = process_data(wcube, 'm/s', 'W')
 
     for i in range(0,len(selected_times)):
         ncout = nc.Dataset(savedir + '/' + testname + f'_{i}.nc',
