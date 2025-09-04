@@ -1,3 +1,25 @@
+"""" Script to extract data and metadata from Venus PCM outputs, reformat them as needed by
+    the Parcels package, and write them to a new batch of netcdf files for trajectory analysis.
+    
+    Notes FOR VENUS:
+        1. VENUS ROTATES BACKWARDS. The VPCM outputs have a flipped longitude axis that runs from
+        +180 to -180. The U-wind direction is defined as positive when flowing towards -180. 
+        When plotting winds with matplotlib, the package will reverse the x-axis (longitude) coordinates 
+        from small to large and flip the data being plotted with it. You can then multiple the u-wind
+        by -1 to get the true orientation. HOWEVER, Parcels doesn't do any such reorientation. Keeping
+        the longitude axis orientation as-is leads to OutOfBounds errors when running the trajectory 
+        analysis. Accordingly, this script reverses the longitude axis to run from -180 to +180 and flips
+        all data arrays along the lon axis to match. It also still multiplies the U-wind by -1 to get
+        the desired orientation (where negative is towards -180).
+        2. The VPCM runs on an Arakawa C grid with different grid indexing than expected by Parcels.
+        However, the outputs have the U/V/W fields on the same coords, so apparently the PCM or XIOS
+        regrids the data before writing to netcdf. Hence the data should be treated as an A grid.
+
+    Notes GENERAL:
+        1. Parcels is mostly used for ocean data, so the vertical coordinate is depth in meters.
+        2. Parcels only parses certain date formats. This script rewrites the time coordinate to use
+        a format the package accepts.
+        """
 # %%
 import numpy as np
 import netCDF4 as nc
@@ -8,7 +30,7 @@ from datetime import datetime, timedelta
 fn = '/exomars/data/internal/working/mc5526/VPCM_age_of_air/aoa35_96x96x50/Xins_141to145.nc' # Path to file with model output
 experiment_name = 'VenusTest' # For labelling new files
 outputdir = '/exomars/projects/mc5526/lagrangian_trajectory/' + experiment_name
-t_select = (0,5) # Range of times to be included
+t_select = (0,20) # Range of times to be included
 h_select = (0,None) # Range of heights to be included
 rho = 65 # Density of atmosphere in kg/m3 - only needed if vertical wind is in Pa/s (for conversion)
 g_constant = 8.87 # Gravitational constant of planet in m/s2
@@ -89,7 +111,7 @@ def extract_metadata(ncfile):
     Outputs: arrays of longitudes, latitudes, timestamps, and scalar value
              of the time interval between each output cube (in seconds)  """
 
-    lons = ncfile['lon'][:]
+    lons = ncfile['lon'][::-1] # Reverse longitude axis to run -180 to +180
     lats = ncfile['lat'][:]
     times = ncfile['time_counter'][:]
     t_interval = np.diff(ncfile['time_counter'][:])[0]
@@ -107,24 +129,21 @@ def process_data(windcube, windunits, windtype):
         print('Processing upward wind')
         if windunits == 'Pa/s':
             print('Wind units are Pa/s, converting to m/s')
-            w_wind = windcube[:]
+            w_wind = windcube[:,:,:,::-1]
             winddata = -1*w_wind/(rho*g_constant)
         elif windunits == 'm/s':
             print('Wind units are m/s, good to go')
-            winddata = windcube[:]
+            winddata = windcube[:,:,:,::-1]
         else:
             print('Cannot parse wind units')
     elif windtype=='V':
         print('Processing northward wind')
-        winddata = windcube[:]
+        winddata = windcube[:,:,:,::-1]
     elif windtype=='U':
         print('Processing eastward wind')
-        winddata = windcube[:]
+        winddata = -windcube[:,:,:,::-1]
     else:
         print('Invalid wind type, must be U, V, or W')
-
-    # windout = np.roll(winddata, 1, axis=2) # Shift cube 1 row up Y-axis (latitudes)
-    # windout[:,:,0,:] = 0 # Fill the emptied latitude row with 0s 
 
     return winddata
 # %%
