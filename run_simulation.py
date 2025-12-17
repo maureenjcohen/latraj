@@ -3,7 +3,9 @@ import netCDF4 as nc
 import xarray as xr
 import os, re
 from datetime import timedelta
-from parcels import FieldSet, ParticleSet, JITParticle, AdvectionRK4_3D, StatusCode
+import parcels
+from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4_3D
+from custom_kernels import periodicBC, convection, smagdiff, VenusParticle
 
 # Define any variables for the run
 # %%
@@ -51,18 +53,23 @@ fieldset = FieldSet.from_netcdf(filenames,
 
 fieldset.add_constant("halo_west", fieldset.U.grid.lon[0])
 fieldset.add_constant("halo_east", fieldset.U.grid.lon[-1])
-#fieldset.add_constant("halo_south", fieldset.U.grid.lat[0])
-#fieldset.add_constant("halo_north", fieldset.U.grid.lat[-1])
 fieldset.add_periodic_halo(zonal=True, meridional=False)
+x = fieldset.U.grid.lon
+y = fieldset.U.grid.lat
+
+cell_areas = parcels.Field(
+    name="cell_areas", data=fieldset.U.cell_areas(), lon=x, lat=y)
+fieldset.add_field(cell_areas)
+fieldset.add_constant("Cs", 0.1)
 
 # Create particle set
 # %%
-pset = ParticleSet.from_list(
+pset_clouds = ParticleSet.from_list(
     fieldset=fieldset,
-    pclass=JITParticle,
+    pclass=VenusParticle,
     lon=[90., 90.],
     lat=[-0.0, 41.25],
-    depth=[72300.0, 72300.0],)
+    depth=[45000.0, 55000.0],)
 
 # %%
 pset_polar = ParticleSet.from_list(
@@ -72,27 +79,15 @@ pset_polar = ParticleSet.from_list(
     lat=[65.0, 65.0],
     depth=[35400.0, 35400.0],)
 
-# Define kernels
 # %%
-def CheckOutOfBounds(particle, fieldset, time):
-    if particle.state == StatusCode.ErrorOutOfBounds:
-        particle.delete()
-
-def periodicBC(particle, fieldset, time):
-    if particle.lon < fieldset.halo_west:
-        particle_dlon += fieldset.halo_east - fieldset.halo_west
-    elif particle.lon > fieldset.halo_east:
-        particle_dlon -= fieldset.halo_east - fieldset.halo_west
-
-# %%
-output_file = pset_polar.ParticleFile(
-              name=savedir+'PolarTest_long.zarr',
-              outputdt=timedelta(hours=12),
+output_file = pset_clouds.ParticleFile(
+              name=savedir+'CloudTest_long.zarr',
+              outputdt=timedelta(hours=2),
 )
 
-pset_polar.execute([AdvectionRK4_3D, periodicBC],
+pset_clouds.execute([AdvectionRK4_3D, smagdiff, convection, periodicBC],
              runtime=timedelta(days=60),
-             dt=timedelta(minutes=30),
+             dt=timedelta(minutes=5),
              output_file=output_file,
              verbose_progress=True, 
 )
