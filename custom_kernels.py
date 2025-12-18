@@ -8,8 +8,8 @@ import numpy as np
 # %%
 class VenusParticle(JITParticle):
     """ Custom particle class for Venus simulations """
-    next_convection = Variable('next_convection', dtype=np.datetime64, 
-                               initial=np.datetime64('1970-01-01 00:00:00'), to_write=True)
+    next_convection = Variable('next_convection', dtype=np.float32, 
+                               initial=0.0, to_write=True)
 
 # %%
 def CheckOutOfBounds(particle, fieldset, time):
@@ -64,10 +64,9 @@ def convection(particle, fieldset, time):
         2 hours and a standard deviation of 1 hour.
     """
     if time >= particle.next_convection:
-        if particle.depth <=55000.0 and particle.depth >= 48000.0:
+        if particle.depth <=55000.0 and particle.depth >= 48000.0: # convection layer
             Z = parcels.ParcelsRandom.normalvariate(0.0, 500.0) # in meters
             particle_ddepth = particle_ddepth + Z
-            particle.next_convection = time + np.timedelta64(int(math.fabs(
+            particle.next_convection = time + math.fabs(
                 parcels.ParcelsRandom.normalvariate(2 * 3600, 1 * 3600))
-            ),'s')
 # %%

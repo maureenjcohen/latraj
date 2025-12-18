@@ -69,7 +69,7 @@ pset_clouds = ParticleSet.from_list(
     pclass=VenusParticle,
     lon=[90., 90.],
     lat=[-0.0, 41.25],
-    depth=[45000.0, 55000.0],)
+    depth=[49000.0, 53000.0],)
 
 # %%
 pset_polar = ParticleSet.from_list(
@@ -81,8 +81,8 @@ pset_polar = ParticleSet.from_list(
 
 # %%
 output_file = pset_clouds.ParticleFile(
-              name=savedir+'CloudTest_long.zarr',
-              outputdt=timedelta(hours=2),
+              name=savedir+'CloudTest2.zarr',
+              outputdt=timedelta(minutes=30),
 )
 
 pset_clouds.execute([AdvectionRK4_3D, smagdiff, convection, periodicBC],
