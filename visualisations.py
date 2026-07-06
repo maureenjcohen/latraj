@@ -4,60 +4,84 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Assuming your dataset is loaded as 'ds'
-# ds = xr.open_zarr('path_to_your_file.zarr')
-
 
 # %%
-def traj3d(ds):
+def traj3d(ds, traj_id):
     t0 = ds.time.values.min()
+    z_min = ds.z.values.min()/1000
+    z_max = ds.z.values.max()/1000
     fig = go.Figure()
-
-    # Loop through each trajectory ID
-    for i, traj_id in enumerate(ds.trajectory.values):
         
-        # 1. Isolate and compute the data for this specific trajectory
-        traj = ds.sel(trajectory=traj_id).compute()
-        elapsed_days = (traj.time.values - t0) / np.timedelta64(1, 'D')
+    # 1. Isolate and compute the data for this specific trajectory
+    traj = ds.sel(trajectory=traj_id).compute()
+    lon_raw = traj.lon.values
+    lat_raw = traj.lat.values
+    z_raw = traj.z.values/1000
+    lon_diffs = np.abs(np.diff(lon_raw))
+    jump_indices = np.where(lon_diffs > 180)[0] + 1
+    elapsed_days_raw = (traj.time.values - t0) / np.timedelta64(1, 'D')
+    lon_clean = np.insert(lon_raw, jump_indices, np.nan)
+    lat_clean = np.insert(lat_raw, jump_indices, np.nan)
+    z_clean = np.insert(z_raw, jump_indices, np.nan)
+    days_clean = np.insert(elapsed_days_raw, jump_indices, np.nan)
 
-        # 2. Add the 3D line to the plot
-        fig.add_trace(go.Scatter3d(
-            x=traj.lon.values,
-            y=traj.lat.values,
-            z=traj.z.values*1e-3,
-            mode='lines',
-            hoverinfo='skip', # Disable hover functionality for the static plot
-            
-            line=dict(
-                width=6,
-                color=elapsed_days, 
-                colorscale='Plasma',               
-                showscale=True if i == 0 else False,
-                colorbar=dict(
-                    title="Time<br>(days)", 
-                    thickness=15, 
-                    len=0.6, 
-                    x=0.7,
-                    tickfont=dict(size=12) # Ensure labels are readable in print
-                ) if i == 0 else None
+    start_lon = traj.lon.values[0]
+    start_lat = traj.lat.values[0]
+    start_z   = traj.z.values[0]/1000
+
+    # 2. Add the 3D line to the plot
+    fig.add_trace(go.Scatter3d(
+        x=lon_clean,
+        y=lat_clean,
+        z=z_clean,
+        mode='lines',
+        name=f'Trajectory {traj_id-7}',
+        hoverinfo='skip', # Disable hover functionality for the static plot
+        
+        line=dict(
+            width=5,
+            color=days_clean/117, 
+            colorscale='plasma_r',               
+            showscale=True,
+            colorbar=dict(
+                title="Time<br>(Venus days)", 
+                thickness=15, 
+                len=0.6, 
+                x=0.66,
+                tickfont=dict(size=12) # Ensure labels are readable in print
             )
-        ))
+        )
+    ))
+
+    fig.add_trace(go.Scatter3d(
+        x=[start_lon],
+        y=[start_lat],
+        z=[start_z],
+        mode='markers',
+        marker=dict(
+            size=6,         # Adjust size as needed for visibility
+            color='red', 
+            symbol='circle'
+        ),
+        showlegend=False,   # Keep the legend clean
+        hoverinfo='skip'    # Disable hover since it's a static document
+    ))
 
     # 3. Define the static camera viewing angle
     # You may need to tweak the 'eye' coordinates to get the perfect perspective
     camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
-        eye=dict(x=1.4, y=1.4, z=0.4) 
+        eye=dict(x=1.3, y=-1.3, z=0.5) 
     )
 
     # 4. Format the 3D environment for a print document
     fig.update_layout(
         title=dict(
-            text="Potential trajectories through the Venus cloud decks",
+            text="Potential trajectory through the Venus cloud decks",
             x=0.5, 
-            y=0.7,
-            font=dict(size=20, family="Arial") # Use standard document fonts
+            y=0.65,
+            font=dict(size=24, family="Arial") # Use standard document fonts
         ),
         scene=dict(
             xaxis_title="Longitude / deg",
@@ -72,9 +96,9 @@ def traj3d(ds):
             bgcolor='white', 
             xaxis=dict(backgroundcolor="white", gridcolor="lightgrey"),
             yaxis=dict(backgroundcolor="white", gridcolor="lightgrey"),
-            zaxis=dict(backgroundcolor="white", gridcolor="lightgrey"),
+            zaxis=dict(backgroundcolor="white", gridcolor="lightgrey", range=[z_min, z_max]),
         ),
-        margin=dict(l=0, r=0, b=0, t=60), 
+        margin=dict(l=0, r=0, b=0, t=100), 
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=False

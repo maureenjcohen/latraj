@@ -1,0 +1,17 @@
+name: parcels
+channels:
+        - conda-forge
+        - defaults
+dependencies:
+        - python=3.13
+        - numpy
+        - matplotlib
+        - parcels
+        - netCDF4
+        - datetime
+        - xarray
+        - plotly
+        - re
+        - os
+        - ipykernel
+        - pillow
