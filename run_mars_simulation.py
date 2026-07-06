@@ -64,11 +64,6 @@ def main():
     x = fieldset.U.grid.lon
     y = fieldset.U.grid.lat
 
-    cell_areas = parcels.Field(
-        name="cell_areas", data=fieldset.U.cell_areas(), lon=x, lat=y)
-    fieldset.add_field(cell_areas)
-    fieldset.add_constant("Cs", 0.1)
-
     # Create particle set (initial positions come from config.py)
     pset_clouds = ParticleSet.from_list(
         fieldset=fieldset,
