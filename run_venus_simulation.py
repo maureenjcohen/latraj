@@ -5,12 +5,14 @@ import os, re
 from datetime import timedelta
 import parcels
 from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4_3D
-from custom_kernels import periodicBC, convection_ou, smagdiff, VenusParticle
+import custom_kernels
 import config  # per-run settings; copy config_example.py -> config.py
 import importlib
 
 # %%
 importlib.reload(config) # Run if config settings have been changed
+importlib.reload(custom_kernels)
+from custom_kernels import *
 
 # Get filepaths of all files in datadir
 # %%
@@ -36,7 +38,7 @@ def main():
     datadir = config.DATA_DIR  # Where the preprocessed input files live
     savedir = config.SAVE_DIR  # Where to save output zarrs
 
-    paths = [datadir + f for f in alphanumeric_sort(os.listdir(datadir))]
+    paths = [datadir + '/' + f for f in alphanumeric_sort(os.listdir(datadir))]
 
     # Set up Parcels inputs
     filenames = {'U': paths,

@@ -12,6 +12,7 @@ import importlib
 # %%
 importlib.reload(config) # Run if config settings have been changed
 importlib.reload(custom_kernels)
+from custom_kernels import *
 
 # Get filepaths of all files in datadir
 # %%
