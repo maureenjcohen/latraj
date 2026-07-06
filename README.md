@@ -1,12 +1,9 @@
-# latraj — Lagrangian trajectories in the Venus atmosphere
+# latraj — Lagrangian trajectories in planetary atmospheres
 
 This repository takes wind fields from the LMD Venus Planetary Climate Model
 (VPCM), reformats them for the [OceanParcels](https://oceanparcels.org)
 Lagrangian particle framework, advects virtual particles through those winds, and
 plots the resulting 3-D trajectories through the Venus cloud decks.
-
-The current focus is passive **air parcels**. Later work will add **balloon /
-probe** trajectories using gravitational settling and drag kernels.
 
 ---
 
@@ -24,9 +21,8 @@ Two supporting modules:
 
 - `custom_kernels.py` — the physics kernels Parcels applies to each particle each
   timestep (advection is built in; here we add diffusion, convection, periodic
-  boundaries, and — in future — settling and drag). **This is where most new
-  physics goes.**
-- `vega_convection.py` — derives and validates the convection kernel's parameters
+  boundaries, and — in future — settling and drag).
+- `vega_convection.py` — derives and validates the Venus convection kernel's parameters
   from the Vega balloon data, and plots the fit (`plot_comparison`).
 
 ---
@@ -35,8 +31,7 @@ Two supporting modules:
 
 1. **Create the Python environment.** The heavy dependency is OceanParcels
    (which also pulls in xarray, netCDF4, and a C compiler for its JIT kernels);
-   plotting uses plotly and kaleido. Use the environment file provided by the
-   project supervisor, e.g.
+   plotting uses plotly, matplotlib, or pillow. Use the environment file, e.g.
 
    ```bash
    conda env create -f environment.yml
