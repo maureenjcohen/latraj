@@ -97,3 +97,7 @@ def convection_ou(particle, fieldset, time):
         particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
         particle_ddepth += fieldset.conv_sigma * env * particle.u_conv * particle.dt
 # %%
+def surface_bounce(particle, fieldset, time):
+     if particle.state == StatusCode.ErrorThroughSurface:
+          particle_ddepth = 0.0
+          particle.state = StatusCode.Success
