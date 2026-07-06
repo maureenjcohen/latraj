@@ -48,12 +48,14 @@ heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  
 
 ### Functions for reorganising and reformatting LMD Planets simulation output
 # %%
-def make_file(ncout, step, udata, vdata, wdata, hghts, lats, lons, 
-              time_len):
-    """ Make an individual netCDF file from an empty Dataset"""
+def make_file(ncout, udata, vdata, wdata, hghts, lats, lons,
+              n_times, time_len):
+    """ Fill an empty Dataset with the full run: all timesteps written to a
+        single netCDF file (time dimension = n_times) rather than one file per
+        step. udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes."""
     # Create the dimensions of the new file, same as the old file
-    ncout.createDimension('time', 1)
-    ncout.createDimension('height', len(hghts))  
+    ncout.createDimension('time', n_times)
+    ncout.createDimension('height', len(hghts))
     ncout.createDimension('lat', len(lats))
     ncout.createDimension('lon', len(lons))
 
@@ -61,7 +63,7 @@ def make_file(ncout, step, udata, vdata, wdata, hghts, lats, lons,
     longitude = ncout.createVariable('Longitude', 'float32', ('lon',))
     longitude.units = 'degrees_east'
     longitude.axis = 'X'
-    
+
     # Create variable to store latitudes
     latitude = ncout.createVariable('Latitude', 'float32', ('lat',))
     latitude.units = 'degrees_north'
@@ -72,7 +74,7 @@ def make_file(ncout, step, udata, vdata, wdata, hghts, lats, lons,
     height.units = 'm'
     height.axis = 'Z'
     height.positive = 'up'
-    
+
     # Create variable to hold timestamps
     time = ncout.createVariable('Time', 'float32', ('time',))
     time.units = 'seconds since 1987-03-30 00:00:00'
@@ -99,12 +101,14 @@ def make_file(ncout, step, udata, vdata, wdata, hghts, lats, lons,
     longitude[:] = lons
     height[:] = hghts
 
-    # Now do some funky time stuff
-    secs_passed = step*time_len # Number of secs passed since start of sim
-    secs = timedelta(seconds=secs_passed)
-    date = datetime(1987,3,30) + secs # Add time passed to start date
-    time[:] = nc.date2num(date, time.units)
-    print('File written for:', time[:], time.units)
+    # Now do some funky time stuff. Build one timestamp per step, evenly spaced
+    # by time_len seconds and counted from the start date (index-based, so the
+    # series always begins at zero regardless of where t_select starts).
+    dates = [datetime(1987, 3, 30) + timedelta(seconds=int(step * time_len))
+             for step in range(n_times)]
+    time[:] = nc.date2num(dates, time.units)
+    print('File written for', n_times, 'timesteps:',
+          time[0], '->', time[-1], time.units)
 
  # %%
 def extract_metadata(ncfile):
@@ -179,12 +183,11 @@ def run_preprocess(inputfile, savedir, testname):
     v_data = process_data(vcube, 'm/s', 'V')
     w_data = process_data(wcube, 'm/s', 'W')
 
-    for i in range(0,len(selected_times)):
-        ncout = nc.Dataset(savedir + '/' + testname + f'_{i}.nc',
-                           'w', format='NETCDF4')
-        make_file(ncout, i, u_data[i,:,:,:], v_data[i,:,:,:],
-                   w_data[i,:,:,:], selected_heights, 
-                  lats, lons, t_interval)
+    # Write every timestep into a single netCDF file (one file per run),
+    # rather than one file per timestep.
+    ncout = nc.Dataset(savedir + '/' + testname + '.nc', 'w', format='NETCDF4')
+    make_file(ncout, u_data, v_data, w_data, selected_heights,
+              lats, lons, len(selected_times), t_interval)
     ncout.close(); del ncout
 
 # %%
