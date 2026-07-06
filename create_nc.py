@@ -24,18 +24,21 @@
 import numpy as np
 import netCDF4 as nc
 from datetime import datetime, timedelta
+import config  # per-run settings; copy config_example.py -> config.py
 
 # %%
-# Edit these variables with needed information about data being processed
-fn = '/exomars/data/internal/working/mc5526/VPCM_age_of_air/aoa35_96x96x50/Xins_141to145.nc' # Path to file with model output
-experiment_name = 'VenusTest' # For labelling new files
-outputdir = '/exomars/projects/mc5526/lagrangian_trajectory/' + experiment_name
-t_select = (0,20) # Range of times to be included
-h_select = (0,None) # Range of heights to be included
-rho = 65 # Density of atmosphere in kg/m3 - only needed if vertical wind is in Pa/s (for conversion)
-g_constant = 8.87 # Gravitational constant of planet in m/s2
+# Run settings come from config.py (paths, time/height selection, planet constants).
+fn = config.INPUT_FILE            # Path to file with model output
+experiment_name = config.EXPERIMENT_NAME  # For labelling new files
+outputdir = config.OUTPUT_DIR
+t_select = config.T_SELECT        # Range of times to be included
+h_select = config.H_SELECT        # Range of heights to be included
+rho = config.RHO                  # Density of atmosphere in kg/m3 (for Pa/s -> m/s vertical wind)
+g_constant = config.G_CONSTANT    # Gravitational constant of planet in m/s2
 # If your atmospheric density varies significantly within the model domain,
-# you will have to get a density cube
+# you will have to get a density cube.
+# The model level heights below are a fixed property of the Venus PCM output,
+# not a per-run setting, so they stay here rather than in config.py.
 heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  8.6,
        11.1, 14., 17.3, 20.9, 24.7, 28.5, 32.1, 35.4, 38.6, 41.6, 44.4,
        47.1, 49.7, 52.1, 54.3, 56.4, 58.4, 60.3, 62.1, 63.9, 65.6, 67.4,

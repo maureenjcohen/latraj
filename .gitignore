@@ -1,2 +1,17 @@
-#
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Local configuration (copy config_example.py -> config.py and edit)
+config.py
+
+# Simulation inputs and outputs (large / regenerable)
+*.nc
+*.zarr/
 *.png
+
+# OS / editor cruft
+.DS_Store
+.vscode/
