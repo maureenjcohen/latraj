@@ -7,9 +7,14 @@ import numpy as np
 
 # %%
 class VenusParticle(JITParticle):
-    """ Custom particle class for Venus simulations """
-    next_convection = Variable('next_convection', dtype=np.float32, 
-                               initial=0.0, to_write=True)
+    """ Custom particle class for Venus simulations.
+
+    Carries u_conv, the dimensionless Ornstein-Uhlenbeck / AR(1) red-noise state
+    used by the convection kernel. It starts at 0; the OU process relaxes to its
+    stationary N(0,1) distribution within a few correlation times (~1 hr for
+    tau = 20 min), which is negligible against the multi-day integration.
+    """
+    u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
 
 # %%
 def CheckOutOfBounds(particle, fieldset, time):
@@ -57,16 +62,38 @@ def smagdiff(particle, fieldset, time):
     particle_dlon += dlon
 
 # %%
-def convection(particle, fieldset, time):
-    """ Simple convection kernel that moves particles up/down by a distance Z
-        drawn from a normal distribution with mean 0 and stddev 500 m every X
-        seconds, with X also drawn from a normal distribution with a mean of
-        2 hours and a standard deviation of 1 hour.
+def convection_ou(particle, fieldset, time):
+    """ Convective vertical-wind kernel: an Ornstein-Uhlenbeck / AR(1) red-noise
+        process calibrated to the Vega balloon anemometer data (see
+        vega_convection.py). Each parcel carries a dimensionless, zero-mean,
+        unit-variance state u_conv, advanced by the exact OU update
+
+            a      = exp(-|dt| / tau)
+            u_conv = a * u_conv + sqrt(1 - a^2) * g,   g ~ N(0, 1)
+
+        so u_conv stays stationary N(0,1) with correlation time fieldset.conv_tau.
+        The physical convective velocity applied to the parcel is
+
+            w_conv = fieldset.conv_sigma * envelope(depth) * u_conv
+
+        where envelope(z) is 1 inside [conv_z_lo, conv_z_hi], tapers linearly to 0
+        over conv_edge at each edge, and is 0 outside. This is layered on top of
+        the large-scale W from the advection kernel; it does not replace it. The
+        update is exact for any dt, so no sub-stepping is needed.
     """
-    if time >= particle.next_convection:
-        if particle.depth <=55000.0 and particle.depth >= 48000.0: # convection layer
-            Z = parcels.ParcelsRandom.normalvariate(0.0, 500.0) # in meters
-            particle_ddepth = particle_ddepth + Z
-            particle.next_convection = time + math.fabs(
-                parcels.ParcelsRandom.normalvariate(2 * 3600, 1 * 3600))
+    z = particle.depth
+    env = 0.0
+    if z > fieldset.conv_z_lo - fieldset.conv_edge and z < fieldset.conv_z_hi + fieldset.conv_edge:
+        if z < fieldset.conv_z_lo:
+            env = (z - (fieldset.conv_z_lo - fieldset.conv_edge)) / fieldset.conv_edge
+        elif z > fieldset.conv_z_hi:
+            env = ((fieldset.conv_z_hi + fieldset.conv_edge) - z) / fieldset.conv_edge
+        else:
+            env = 1.0
+
+    if env > 0.0:
+        a = math.exp(-math.fabs(particle.dt) / fieldset.conv_tau)
+        g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
+        particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
+        particle_ddepth += fieldset.conv_sigma * env * particle.u_conv * particle.dt
 # %%
