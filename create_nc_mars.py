@@ -2,7 +2,8 @@
     the Parcels package, and write them to a new batch of netcdf files for trajectory analysis.
     
     Notes FOR MARS:
-        1. TBA
+        1. Time axis is in Martian sols (88775 seconds each).
+        2. Since Mars has seasons (unlike Venus) and a long year (compared to Earth), a long time sample of at least one Mars year is necessary to capture dynamical changes over the year.
 
     Notes GENERAL:
         1. Parcels is mostly used for ocean data, so the vertical coordinate is depth in meters.
