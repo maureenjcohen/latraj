@@ -14,7 +14,11 @@
 import numpy as np
 import netCDF4 as nc
 from datetime import datetime, timedelta
+import importlib
 import config  # per-run settings; copy config_example.py -> config.py
+
+# %%
+importlib.reload(config) # Run if config settings have been changed
 
 # %%
 # Run settings come from config.py (paths, time/height selection, planet constants).
