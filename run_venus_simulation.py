@@ -39,7 +39,7 @@ def main():
     savedir = config.SAVE_DIR  # Where to save output zarrs
 
     paths = [datadir + '/' + f for f in alphanumeric_sort(os.listdir(datadir))]
-
+    print(paths)
     # Set up Parcels inputs
     filenames = {'U': paths,
                  'V': paths,

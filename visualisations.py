@@ -4,7 +4,6 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-
 # %%
 def traj3d(ds, traj_id):
     t0 = ds.time.values.min()
@@ -106,7 +105,7 @@ def traj3d(ds, traj_id):
 
     # 5. Export as a high-resolution static image
     # Note: This requires the 'kaleido' package installed in your Python environment
-    #fig.write_image("trajectory_grant_figure.png", width=1200, height=800, scale=3)
+    fig.write_image("trajectory_grant_figure.png", width=1200, height=800, scale=3)
 
     # You can still call fig.show() in your notebook just to preview the camera angle
     fig.show()
