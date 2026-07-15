@@ -88,5 +88,7 @@ def convection_ou(particles, fieldset):
 # %%
 def surface_bounce(particles, fieldset):
     hit = np.asarray(particles.state) == StatusCode.ErrorThroughSurface
-    particles.dz = np.where(hit, 0.0, np.asarray(particles.dz))
-    particles.state = np.where(hit, StatusCode.Success, np.asarray(particles.state))
+    particles.dz = np.where(hit, fieldset.W.grid.depth[0] - np.asarray(particles.z), 
+                            np.asarray(particles.dz))
+    particles.state = np.where(hit, StatusCode.Evaluate, np.asarray(particles.state))
+# %%
