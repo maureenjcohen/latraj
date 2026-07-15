@@ -90,6 +90,12 @@ def main():
                  output_file=output_file,
                  verbose_progress=True,
     )
+    print("t    :", pset._data["t"][:])
+    print("dt   :", pset._data["dt"][:])
+    print("state:", pset._data["state"][:])
+    print("x,y,z:", pset._data["x"][:], pset._data["y"][:], pset._data["z"][:])
+    print("nparts:", len(pset))
+
 
 
 # %%

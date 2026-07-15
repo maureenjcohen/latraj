@@ -3,7 +3,16 @@ import xarray as xr
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from parcels import read_particlefile
 
+# %%
+def load_particlefile(path):
+    df = read_particlefile(path).to_pandas()
+    df = df.rename(columns={"x":"lon", "y":"lat", "t":"time",
+                            "particle_id": "trajectory"})
+    df = df.sort_values(["trajectory","time"])
+    df["obs"] = df.groupby("trajectory").cumcount()
+    return df.set_index(["trajectory","obs"]).to_xarray()
 
 # %%
 def traj3d(ds, traj_id):
