@@ -87,7 +87,7 @@ def main():
     output_path = os.path.join(savedir, os.path.splitext(config.OUTPUT_NAME)[0] + '.parquet')
     output_file = ParticleFile(output_path, outputdt=timedelta(minutes=config.OUTPUT_MINUTES), mode='w')
 
-    pset.execute([periodicBC, AdvectionRK4_3D, surface_bounce],
+    pset.execute([periodicBC, AdvectionRK4_3D, surface_bounce, boundary_stick],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,

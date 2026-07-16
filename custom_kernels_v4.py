@@ -14,6 +14,17 @@ def CheckOutOfBounds(particles, fieldset):
     state = np.asarray(particles.state)
     particles.state = np.where(state == StatusCode.ErrorOutOfBounds, 
                                StatusCode.Delete, state)
+    
+# %%
+def boundary_stick(particles, fieldset):
+    """ Freeze particles that leave the domain (e.g. over the pole) at their
+          last position instead of crashing the simulation. """
+    oob = np.asarray(particles.state) == StatusCode.ErrorOutOfBounds
+    particles.dx = np.where(oob, 0.0, np.asarray(particles.dx))
+    particles.dy = np.where(oob, 0.0, np.asarray(particles.dy))
+    particles.dz = np.where(oob, 0.0, np.asarray(particles.dz))
+    particles.state = np.where(oob, StatusCode.Success, np.asarray(particles.state))
+
 
 # %%
 def periodicBC(particles, fieldset):
