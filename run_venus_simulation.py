@@ -92,7 +92,7 @@ def main():
                   outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
     )
 
-    pset_clouds.execute([AdvectionRK4_3D, smagdiff, convection_ou, periodicBC],
+    pset_clouds.execute([AdvectionRK4_3D, smagdiff, convection_ou, periodicBC, boundary_stick],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
