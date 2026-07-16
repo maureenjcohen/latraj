@@ -22,6 +22,16 @@ def CheckOutOfBounds(particle, fieldset, time):
         particle.delete()
 
 # %%
+def boundary_stick(particle, fieldset, time):
+    """ Freeze particles that leave the domain (e.g. over the pole) at their
+        last in-bounds position instead of crashing the simulation. """
+    if particle.state == StatusCode.ErrorOutOfBounds:
+        particle_dlon = 0.0
+        particle_dlat = 0.0
+        particle_ddepth = 0.0
+        particle.state = StatusCode.Success
+
+# %%
 def periodicBC(particle, fieldset, time):
     if particle.lon < fieldset.halo_west:
         particle_dlon += fieldset.halo_east - fieldset.halo_west
