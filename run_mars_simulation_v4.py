@@ -72,6 +72,9 @@ def main():
     # periodicBC wrap domain
     fieldset.add_context("lon_min", 0.0)
     fieldset.add_context("lon_span", 360.0)
+    lat = np.asarray(fieldset.U.grid.lat)
+    fieldset.add_context("lat_min", float(lat.min()))   # -87.159096
+    fieldset.add_context("lat_max", float(lat.max()))   #  87.159096
 
     # Create particle set (initial positions come from config.py)
     pset = ParticleSet(

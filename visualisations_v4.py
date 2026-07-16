@@ -49,11 +49,11 @@ def traj3d(ds, traj_id):
         
         line=dict(
             width=5,
-            color=days_clean/117, 
+            color=days_clean, 
             colorscale='plasma_r',               
             showscale=True,
             colorbar=dict(
-                title="Time<br>(Venus days)", 
+                title="Time<br>(days)", 
                 thickness=15, 
                 len=0.6, 
                 x=0.66,
@@ -87,7 +87,7 @@ def traj3d(ds, traj_id):
     # 4. Format the 3D environment for a print document
     fig.update_layout(
         title=dict(
-            text="Potential trajectory through the Venus cloud decks",
+            text="Trajectory",
             x=0.5, 
             y=0.65,
             font=dict(size=24, family="Arial") # Use standard document fonts

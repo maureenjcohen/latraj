@@ -21,6 +21,23 @@ def periodicBC(particles, fieldset):
     particles.x = np.mod(np.asarray(particles.x) - lon_min, fieldset.lon_span) + lon_min
 
 # %%
+def polarBC(particles, fieldset):
+    lat = np.asarray(particles.y)
+    lon = np.asarray(particles.x)
+    lon_min, lon_span = fieldset.lon_min, fieldset.lon_span
+    lat_max, lat_min = fieldset.lat_max, fieldset.lat_min
+
+    north = lat > lat_max
+    south = lat < lat_min
+
+    lat = np.where(north, 180.0 - lat, lat)
+    lat = np.where(south, -180.0 - lat, lat)
+    lon = np.where(north | south, np.mod(lon - lon_min + 180.0, lon_span) + lon_min, lon)
+
+    particles.y = lat
+    particles.x = lon
+
+# %%
 def smagdiff(particles, fieldset):
     """ Smagorinsky horizontal diffusion scheme adapted from
         https://oceanparcels.org/tutorials/advanced/smagorinsky_diffusion.html
