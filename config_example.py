@@ -1,4 +1,4 @@
-""" Per-run and machine-specific configuration for the latraj pipeline.
+http://localhost:8888/lab?token=60a6d0017b83416cd86410ef6595266c96e96f494f321e09""" Per-run and machine-specific configuration for the latraj pipeline.
 
     HOW TO USE THIS FILE
     --------------------
@@ -40,8 +40,8 @@ G_CONSTANT = 8.87       # planetary surface gravity [m/s2]
 # Initial particle positions: one entry per particle, so all three lists must
 # be the same length. This is the block you will most often edit.
 PARTICLE_LON = [90., 90.]           # degrees east, -180..180
-PARTICLE_LAT = [-0.0, 41.25]        # degrees north
-PARTICLE_DEPTH = [49000.0, 53000.0]  # altitude in metres (positive = up)
+PARTICLE_LAT = [40, 40]        # degrees north
+PARTICLE_DEPTH = [43000.0, 43000.0]  # altitude in metres (positive = up)
 
 RUNTIME_DAYS = 60       # total simulated time
 DT_MINUTES = 5          # integration timestep
