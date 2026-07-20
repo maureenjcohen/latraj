@@ -283,20 +283,8 @@ def compare_traj(ds1, ds2, traj_id):
                 mode="markers",
                 name=f'{label[i]}',
                 hoverinfo='skip', # Disable hover functionality for the static plot
-                
-                # line=dict(
-                #     width=5,
-                #     color=days_clean, 
-                #     colorscale='plasma_r',               
-                #     showscale=True,
-                #     colorbar=dict(
-                #         title="Time<br>(days)", 
-                #         thickness=15, 
-                #         len=0.6, 
-                #         x=0.66,
-                #         tickfont=dict(size=12) # Ensure labels are readable in print
-                #     )
-                # )
+                showlegend=False,
+
                 marker=dict(
                     symbol=symbols[i],
                     size=4,        
@@ -308,7 +296,7 @@ def compare_traj(ds1, ds2, traj_id):
                          title="Time<br>(days)", 
                          thickness=15, 
                          len=0.6, 
-                         x=0.95,
+                         x=0.92,
                          tickfont=dict(size=12) # Ensure labels are readable in print
                      )
                 )
@@ -321,6 +309,7 @@ def compare_traj(ds1, ds2, traj_id):
                 mode="markers",
                 name=f'{label[i]}',
                 hoverinfo='skip', # Disable hover functionality for the static plot
+                showlegend=False,
                 
                 marker=dict(
                     symbol=symbols[i],
@@ -345,13 +334,27 @@ def compare_traj(ds1, ds2, traj_id):
             showlegend=False,   # Keep the legend clean
             hoverinfo='skip'    # Disable hover since it's a static document
         ))
-
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode="markers",
+        marker=dict(symbol="circle", size=8, color="black"),
+        name="Control",
+        showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode="markers",
+        marker=dict(symbol="x", size=8, color="black"),
+        name="Assim",
+        showlegend=True,
+    ))
     # 3. Define the static camera viewing angle
     # You may need to tweak the 'eye' coordinates to get the perfect perspective
+    zoom=1.3
     camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
-        eye=dict(x=1.3, y=-1.3, z=1.5) 
+        eye=dict(x=1.3*zoom, y=-1.3*zoom, z=1.5*zoom) 
     )
 
     # 4. Format the 3D environment for a print document
@@ -380,7 +383,8 @@ def compare_traj(ds1, ds2, traj_id):
         margin=dict(l=0, r=0, b=0, t=10), 
         paper_bgcolor='white',
         plot_bgcolor='white',
-        showlegend=True
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False)
     )
 
     # 5. Export as a high-resolution static image
