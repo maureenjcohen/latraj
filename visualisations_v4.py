@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from parcels import read_particlefile
+import seaborn as sns
 
 # %%
 def load_particlefile(path):
@@ -253,7 +254,8 @@ def compare_traj(ds1, ds2, traj_id):
     fig = go.Figure()
         
     label = ["Control", "Assim"]
-    style = ["lines", "markers"]
+    #style = ["lines", "markers"]
+    symbols = ["circle", "x"]
 # 1. Isolate and compute the data for this specific trajectory
     for i, ds in enumerate([ds1, ds2]):
         traj = ds.sel(trajectory=traj_id).compute()
@@ -273,43 +275,60 @@ def compare_traj(ds1, ds2, traj_id):
         start_z   = traj.z.values[0]/1000
 
         # 2. Add the 3D line to the plot
-        if style[i] == "lines":
+        if symbols[i] == "circle":
             fig.add_trace(go.Scatter3d(
                 x=lon_clean,
                 y=lat_clean,
                 z=z_clean,
-                mode=style[i],
+                mode="markers",
                 name=f'{label[i]}',
                 hoverinfo='skip', # Disable hover functionality for the static plot
                 
-                line=dict(
-                    width=5,
-                    color=days_clean, 
-                    colorscale='plasma_r',               
-                    showscale=True,
+                # line=dict(
+                #     width=5,
+                #     color=days_clean, 
+                #     colorscale='plasma_r',               
+                #     showscale=True,
+                #     colorbar=dict(
+                #         title="Time<br>(days)", 
+                #         thickness=15, 
+                #         len=0.6, 
+                #         x=0.66,
+                #         tickfont=dict(size=12) # Ensure labels are readable in print
+                #     )
+                # )
+                marker=dict(
+                    symbol=symbols[i],
+                    size=4,        
+                    color=days_clean,        
+                    colorscale='plasma_r',   # choose a colorscale
+                    opacity=0.8,
+                    line=dict(width=2, color="Black"),
                     colorbar=dict(
-                        title="Time<br>(days)", 
-                        thickness=15, 
-                        len=0.6, 
-                        x=0.66,
-                        tickfont=dict(size=12) # Ensure labels are readable in print
-                    )
+                         title="Time<br>(days)", 
+                         thickness=15, 
+                         len=0.6, 
+                         x=0.95,
+                         tickfont=dict(size=12) # Ensure labels are readable in print
+                     )
                 )
             ))
-        elif style[i] == "markers":
+        elif symbols[i] == "x":
                 fig.add_trace(go.Scatter3d(
                 x=lon_clean,
                 y=lat_clean,
                 z=z_clean,
-                mode=style[i],
+                mode="markers",
                 name=f'{label[i]}',
                 hoverinfo='skip', # Disable hover functionality for the static plot
                 
                 marker=dict(
-                    size=3,        
+                    symbol=symbols[i],
+                    size=2,        
                     color=days_clean,        
                     colorscale='plasma_r',   # choose a colorscale
-                    opacity=0.8
+                    opacity=0.8,
+                    line=dict(width=2, color="Black")
                 )
             ))
                         
@@ -332,7 +351,7 @@ def compare_traj(ds1, ds2, traj_id):
     camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
-        eye=dict(x=1.3, y=-1.3, z=0.5) 
+        eye=dict(x=1.3, y=-1.3, z=1.5) 
     )
 
     # 4. Format the 3D environment for a print document
@@ -340,7 +359,7 @@ def compare_traj(ds1, ds2, traj_id):
         title=dict(
             text=f"Start coords: {float(start_lon):.2f} lon, {float(start_lat):.2f} lat, {float(start_z):.2f} km",
             x=0.5, 
-            y=0.65,
+            y=0.85,
             font=dict(size=12, family="Arial") # Use standard document fonts
         ),
         scene=dict(
@@ -349,7 +368,7 @@ def compare_traj(ds1, ds2, traj_id):
             zaxis_title="Altitude / km",
             
             aspectmode='manual',
-            aspectratio=dict(x=1, y=1, z=0.5),
+            aspectratio=dict(x=2, y=1, z=0.5),
             camera=camera,
             
             # Pure white backgrounds are best for document integration
@@ -358,7 +377,7 @@ def compare_traj(ds1, ds2, traj_id):
             yaxis=dict(backgroundcolor="white", gridcolor="lightgrey"),
             zaxis=dict(backgroundcolor="white", gridcolor="lightgrey", range=[z_min, z_max]),
         ),
-        margin=dict(l=0, r=0, b=0, t=100), 
+        margin=dict(l=0, r=0, b=0, t=10), 
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=True
@@ -366,7 +385,7 @@ def compare_traj(ds1, ds2, traj_id):
 
     # 5. Export as a high-resolution static image
     # Note: This requires the 'kaleido' package installed in your Python environment
-    #fig.write_image("trajectory_grant_figure.png", width=1200, height=800, scale=3)
+    #fig.write_image(f"compare_traj_{traj_id}.png", width=1200, height=800, scale=3)
 
     # You can still call fig.show() in your notebook just to preview the camera angle
     fig.show()
