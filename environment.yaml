@@ -12,3 +12,5 @@ dependencies:
         - plotly
         - ipykernel
         - pillow
+        - python-kaleido
+        - jupyter
