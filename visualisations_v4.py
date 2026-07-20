@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from parcels import read_particlefile
+import matplotlib.pyplot as plt
 import seaborn as sns
 
 # %%
@@ -394,4 +395,71 @@ def compare_traj(ds1, ds2, traj_id):
     # You can still call fig.show() in your notebook just to preview the camera angle
     fig.show()
 
+# %%
+def _edges_from_centres(c):
+    """Cell edges as midpoints between (ascending) centres, extrapolated at the ends."""
+    c = np.asarray(c, dtype=float)
+    mids = 0.5 * (c[:-1] + c[1:])
+    first = c[0] - (mids[0] - c[0])
+    last  = c[-1] + (c[-1] - mids[-1])
+    return np.concatenate([[first], mids, [last]])
+
+# %%
+def count_heatmap(ds1, ds2, z_range, lat_range=(-90,-30),
+                  grid_path='/exomars/projects/mc5526/lagrangian_trajectory/Mars_inputs/control/control.nc', 
+                  lon_step=16, lat_step=4, cmap="cividis",
+                  save=False, savepath='/exomars/projects/mc5526/lagrangian_trajectory/scratch_plots/'):
+    z_low, z_high = z_range
+    labels = ["Control", "Assim"]
+
+    # 1. Native grid centres -> ascending edges (histogram2d needs ascending bins)
+    grid = xr.open_dataset(grid_path)
+    lon_c = grid.lon.values                       # already ascending
+    lat_c = grid.lat.values
+    lat_order = np.argsort(lat_c)                        # descending -> ascending
+    lat_asc = lat_c[lat_order]
+
+    lon_edges = _edges_from_centres(lon_c)
+    lat_edges = _edges_from_centres(lat_asc)
+
+    # 2. Bin every observation into a native gridbox
+    grids = []
+    for ds in (ds1, ds2):
+        lon = ds.lon.values.ravel()
+        lat = ds.lat.values.ravel()
+        z   = ds.z.values.ravel() / 1000.0              # m -> km
+        mask = ((z >= z_low) & (z <= z_high)
+                & np.isfinite(lon) & np.isfinite(lat))
+        counts, _, _ = np.histogram2d(lon[mask], lat[mask],
+                                    bins=[lon_edges, lat_edges])
+        grids.append(counts.T[::-1])                     # rows=lat, north on top
+
+    lat_disp = lat_asc[::-1]
+    if lat_range is not None:
+        lo, hi = min(lat_range), max(lat_range)
+        keep = (lat_disp >= lo) & (lat_disp <= hi)   # boolean over rows
+        grids    = [g[keep] for g in grids]
+        lat_disp = lat_disp[keep]
+
+    vmax = max(g.max() for g in grids)
+
+    # 3. Thinned tick labels (north-on-top ordering for lat)
+    xlabels = [f"{v:g}" if i % lon_step == 0 else "" for i, v in enumerate(lon_c)]
+    ylabels = [f"{v:g}" if i % lat_step == 0 else "" for i, v in enumerate(lat_disp)]
+
+    # 4. Draw the two heatmaps side by side
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+    for ax, grid_counts, label in zip(axes, grids, labels):
+        sns.heatmap(grid_counts, ax=ax, cmap=cmap, vmin=0, vmax=vmax,
+                    xticklabels=xlabels, yticklabels=ylabels,
+                    cbar_kws={"label": "Particle count"})
+        ax.set_title(f"{label}: {z_low:g}–{z_high:g} km")
+        ax.set_xlabel("Longitude / deg")
+        ax.set_ylabel("Latitude / deg")
+
+    plt.tight_layout()
+    if save:
+        plt.savefig(savepath + f'heatmap_{z_range[0]}_to_{z_range[1]}.png', format='png', bbox_inches='tight')
+    plt.show()
+    return
 # %%
