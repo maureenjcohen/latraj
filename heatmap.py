@@ -59,6 +59,12 @@ def double_heatmap(ds):
         lon_raw = traj.lon.values
         lat_raw = traj.lat.values
         z_raw = traj.z.values/1000
+        stuck = traj.stuck.values
+
+        mask = stuck == 0.0
+        lon_raw = lon_raw[mask]
+        lat_raw = lat_raw[mask]
+        z_raw = z_raw[mask]
         
         heatmap_lat, xlat_edge, ylat_edge = np.histogram2d(
             lon_raw, 
@@ -72,7 +78,7 @@ def double_heatmap(ds):
             lon_raw,
             z_raw,
             bins=[360, 150],
-            range=[[-180, 180], [30, 80]],
+            range=[[-180, 180], [0, 80]],
             density=False
         )
         

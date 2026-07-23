@@ -15,6 +15,7 @@ class VenusParticle(JITParticle):
     tau = 20 min), which is negligible against the multi-day integration.
     """
     u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
+    stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
 def CheckOutOfBounds(particle, fieldset, time):
@@ -29,6 +30,7 @@ def boundary_stick(particle, fieldset, time):
         particle_dlon = 0.0
         particle_dlat = 0.0
         particle_ddepth = 0.0
+        particle.stuck = 1
         particle.state = StatusCode.Success
 
 # %%
