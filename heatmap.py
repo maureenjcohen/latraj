@@ -6,19 +6,24 @@ def basic_heatmap(ds):
     fig, ax = plt.subplots(1,1)
     heatmaps, x_edges, y_edges = [], [], []
 
-    ds.compute()
+    ds = ds.compute()
     # 1. Extract data
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         lon_raw = traj.lon.values
         lat_raw = traj.lat.values
         z_raw = traj.z.values/1000
+
+        mask = stuck == 0.0
+        lon_raw = lon_raw[mask]
+        lat_raw = lat_raw[mask]
+        z_raw = z_raw[mask]
         
         heatmap, x_edge, y_edge = np.histogram2d(
             lon_raw, 
             lat_raw, 
             bins=[360, 180], 
-           # range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
+            range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
             density=False
         )
         heatmaps.append(heatmap)
