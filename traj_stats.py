@@ -83,6 +83,7 @@ def ejection_count(ds):
     stuck_values = []
     time_diffs = []
     stuck_sum = 0
+    x = 0
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         time = traj.time.values
@@ -94,6 +95,7 @@ def ejection_count(ds):
         
         if not np.size(time) == 0:
             timedelta = time[-1] - time[0]
+            timedelta = int(timedelta) / (24*3600000000000)
             time_diffs.append(timedelta)
         else:
             timedelta = 0
@@ -105,7 +107,9 @@ def ejection_count(ds):
     total = len(stuck_values)
     stuck_percent = (stuck_sum/total)*100
     print(f"{stuck_percent}% of particles were ejected at the pole.")
-   # print(time_diffs)
+    for timedelta in time_diffs:
+        x+=1
+        print(f"Trajectory {x}: Particle trajectory spent {60-timedelta} days in range, {timedelta} days out of range.")
 
 
 def means(ds):
