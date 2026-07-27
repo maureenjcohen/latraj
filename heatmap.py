@@ -47,7 +47,7 @@ def basic_heatmap(ds):
     )
         
     # 3. Format heatmap layout
-    plt.colorbar(label='Particle counts')
+    plt.colorbar(label='Particle count')
     plt.xlabel('Longitude / deg')
     plt.ylabel('Latitude / deg')
     plt.title('Potential trajectories through Venus cloud decks')
@@ -138,7 +138,7 @@ def double_heatmap(ds):
     )
     plt.xlabel('Longitude / deg')
     plt.ylabel('Altitude / km')
-    plt.colorbar(label='Particle counts')
+    plt.colorbar(label='Particle count')
 
     # 3. Format graph layouts
     fig.suptitle('Potential trajectories through the Venus cloud decks')
