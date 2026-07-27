@@ -1,23 +1,54 @@
 import xarray as xr
 import numpy as np
+import datetime as dt
+import config
 
-# maybe-temporary config settings for upper and lower boundaries
-lat_lowbound = 0
-lat_highbound = 40
-z_lowbound = 48
-z_highbound = 55
+latitude_boundaries = {
+    'South Poles': [-90, -60],
+    'South Midlatitudes': [-60, -40],
+    'South Equator': [-40, 0],
+    'North Equator': [0, 40],
+    'North Midlatitudes': [40, 60],
+    'North Poles': [60, 90]
+}
+
+altitude_boundaries = {
+    'Deep Atmosphere': [0, 48000],
+    'Convective Clouds': [48000, 55000],
+    'Upper Clouds': [55000, 70000]
+}
+
+def get_boundaries():
+    lat_lowbound, lat_highbound, z_lowbound, z_highbound = 0, 0, 0, 0
+    for region, coords in latitude_boundaries.items():
+        if config.PARTICLE_LAT[0] >= coords[0] and config.PARTICLE_LAT[0] <= coords[1]:
+            lat_lowbound, lat_highbound = coords[0], coords[1]
+    for region, coords in altitude_boundaries.items():
+        if config.PARTICLE_DEPTH[0] >= coords[0] and config.PARTICLE_DEPTH[0] <= coords[1]:
+            z_lowbound, z_highbound = coords[0], coords[1]
+    return lat_lowbound, lat_highbound, z_lowbound, z_highbound
+    raise TypeError('Does not accept ints or floats')
+    raise ValueError('Input value too high or too low')
 
 def sum_ranges(ds):
     ds = ds.compute()
     lat_last, z_last = [], []
     lat_inrange, lat_outofrange = 0, 0
     z_inrange, z_outofrange = 0, 0
+    lat_lowbound, lat_highbound, z_lowbound, z_highbound = get_boundaries()
+    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees, altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")
     
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         lon_raw = traj.lon.values
         lat_raw = traj.lat.values
-        z_raw = traj.z.values/1000
+        z_raw = traj.z.values
+        stuck = traj.stuck.values
+
+        mask = stuck == 0.0
+        lon_raw = lon_raw[mask]
+        lat_raw = lat_raw[mask]
+        z_raw = z_raw[mask]
 
         lat_last.append(lat_raw[-1])
         z_last.append(z_raw[-1])
@@ -45,7 +76,37 @@ def sum_ranges(ds):
     print(f"{lat_outpercent}% of particles ended up outside the latitude range.")
     print(f"{z_inpercent}% of particles stayed in the altitude range.")
     print(f"{z_outpercent}% of particles ended up outside the altitude range.")
+
+
+def ejection_count(ds):
+    ds = ds.compute()
+    stuck_values = []
+    time_diffs = []
+    stuck_sum = 0
+    for i, traj_id in enumerate(ds.trajectory.values):
+        traj = ds.sel(trajectory=traj_id)
+        time = traj.time.values
+        stuck = traj.stuck.values
+        stuck_values.append(stuck[0])
         
+        mask = stuck == 1
+        time = time[mask]
+        
+        if not np.size(time) == 0:
+            timedelta = time[-1] - time[0]
+            time_diffs.append(timedelta)
+        else:
+            timedelta = 0
+            time_diffs.append(timedelta)
+        
+        if 1 in stuck:
+            stuck_sum += 1
+            
+    total = len(stuck_values)
+    stuck_percent = (stuck_sum/total)*100
+    print(f"{stuck_percent}% of particles were ejected at the pole.")
+   # print(time_diffs)
+
 
 def means(ds):
     ds = ds.compute()
@@ -59,7 +120,13 @@ def means(ds):
         lon_raw = traj.lon.values
         lat_raw = traj.lat.values
         z_raw = traj.z.values/1000
+        stuck = traj.stuck.values
 
+        mask = stuck == 0.0
+        lon_raw = lon_raw[mask]
+        lat_raw = lat_raw[mask]
+        z_raw = z_raw[mask]
+        
         lat_mean = np.mean(lat_raw)
         lat_stdv = np.std(lat_raw)
         z_mean = np.mean(z_raw)
@@ -91,5 +158,5 @@ def means(ds):
         y += 1
         print(f"Trajectory: {y}, Latitude: {lat_stdv} degrees, Altitude: {z_stdv} km.")
 
-        
+            
         
