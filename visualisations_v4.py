@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from parcels import read_particlefile
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, Normalize
 import seaborn as sns
 
 # %%
@@ -408,7 +408,8 @@ def _edges_from_centres(c):
 # %%
 def count_heatmap(ds1, ds2, z_range, lat_range=(-90,-30),
                   grid_path='/exomars/projects/mc5526/lagrangian_trajectory/Mars_inputs/control/control.nc', 
-                  lon_step=16, lat_step=4, cmap="cividis",
+                  lon_step=16, lat_step=4, cmap="cividis", scale="log",
+                  vmin=None,
                   save=False, savepath='/exomars/projects/mc5526/lagrangian_trajectory/scratch_plots/'):
     z_low, z_high = z_range
     labels = ["Control", "Assim"]
@@ -448,7 +449,12 @@ def count_heatmap(ds1, ds2, z_range, lat_range=(-90,-30),
     xlabels = [f"{v:g}" if i % lon_step == 0 else "" for i, v in enumerate(lon_c)]
     ylabels = [f"{v:g}" if i % lat_step == 0 else "" for i, v in enumerate(lat_disp)]
 
-    norm = LogNorm(vmin=1, vmax=vmax)
+    if scale == "log":
+        norm = LogNorm(vmin=vmin if vmin is not None else 1, vmax=vmax)   # 0-count cells masked (see set_bad)
+    elif scale == "linear":
+        norm = Normalize(vmin=vmin if vmin is not None else 0, vmax=vmax)  # 0-count cells at bottom of ramp
+    else:
+        raise ValueError(f"scale must be 'log' or 'linear', got {scale!r}")
     lat_edges_disp = _edges_from_centres(lat_disp)
     cmap_obj = plt.get_cmap(cmap).copy()
     cmap_obj.set_bad(cmap_obj(0.0))
