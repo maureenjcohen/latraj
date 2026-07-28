@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 import datetime as dt
 import config
+from prettytable import PrettyTable
 
 latitude_boundaries = {
     'South Poles': [-90, -60],
@@ -18,6 +19,7 @@ altitude_boundaries = {
     'Upper Clouds': [55000, 70000]
 }
 
+
 def get_boundaries():
     lat_lowbound, lat_highbound, z_lowbound, z_highbound = 0, 0, 0, 0
     for region, coords in latitude_boundaries.items():
@@ -30,13 +32,14 @@ def get_boundaries():
     raise TypeError('Does not accept ints or floats')
     raise ValueError('Input value too high or too low')
 
+    
 def sum_ranges(ds):
     ds = ds.compute()
     lat_last, z_last = [], []
     lat_inrange, lat_outofrange = 0, 0
     z_inrange, z_outofrange = 0, 0
     lat_lowbound, lat_highbound, z_lowbound, z_highbound = get_boundaries()
-    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees, altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")
+    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees. Altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")
     
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
@@ -62,7 +65,7 @@ def sum_ranges(ds):
     for value in z_last:
         if value > z_highbound or value < z_lowbound:
             z_outofrange += 1
-        elif value < z_highbound and value > z_lowbound: 
+        elif value <= z_highbound and value >= z_lowbound: 
             z_inrange += 1
 
     total = len(lat_last)
@@ -76,6 +79,66 @@ def sum_ranges(ds):
     print(f"{lat_outpercent}% of particles ended up outside the latitude range.")
     print(f"{z_inpercent}% of particles stayed in the altitude range.")
     print(f"{z_outpercent}% of particles ended up outside the altitude range.")
+
+
+def outofrange_count(ds):
+    ds = ds.compute()
+    lat_lowbound, lat_highbound, z_lowbound, z_highbound = get_boundaries()
+    start_values, lat_time_diffs, z_time_diffs = [], [], []
+    table1 = PrettyTable(["Trajectory no.", "Days spent within latitude range", "Days spent out of latitude range"])
+    table2 = PrettyTable(["Trajectory no.", "Days spent within altitude range", "Days spent out of altitude range"])
+    x, y = 0, 0
+
+    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees. Altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")
+    for i, traj_id in enumerate(ds.trajectory.values):
+        traj = ds.sel(trajectory=traj_id)
+        time = traj.time.values
+        lat_raw = traj.lat.values
+        z_raw = traj.z.values
+        stuck = traj.stuck.values
+        start_values.append(lat_raw[0])
+
+        mask = stuck == 0.0
+        lat_raw = lat_raw[mask]
+        z_raw = z_raw[mask]
+        time = time[mask]
+
+        lat_mask = np.where((lat_lowbound >= lat_raw) | (lat_highbound <= lat_raw), True, False)
+        z_mask = np.where((z_lowbound >= z_raw) | (z_highbound <= z_raw), True, False)
+        lat_time = time[lat_mask]
+        z_time = time[z_mask]
+        
+        if not np.size(lat_time) == 0:
+            lat_timedelta = lat_time[-1] - lat_time[0]
+            lat_timedelta = int(lat_timedelta) / (24*3600000000000)
+            lat_time_diffs.append(lat_timedelta)
+        else:
+            lat_timedelta = 0
+            lat_time_diffs.append(lat_timedelta)
+
+        if not np.size(z_time) == 0:
+            z_timedelta = z_time[-1] - z_time[0]
+            z_timedelta = int(z_timedelta) / (24*3600000000000)
+            z_time_diffs.append(z_timedelta)
+        else:
+            z_timedelta = 0
+            z_time_diffs.append(z_timedelta)
+            
+    total = len(start_values)
+    lat_percent = (len(lat_mask)/total)*100
+    z_percent = (len(z_mask)/total)*100
+    #print(f"{lat_percent}% of particles stayed within the latitude range.")
+    #print(f"{z_percent}% of particles stayed within the altitude range.")
+
+    for lat_timedelta in lat_time_diffs:
+        x+=1
+        table1.add_row([x, 60-lat_timedelta, lat_timedelta])
+
+    for z_timedelta in z_time_diffs:
+        y+=1
+        table2.add_row([y, 60-z_timedelta, z_timedelta])
+    print(table1)
+    print(table2)
 
 
 def ejection_count(ds):
@@ -109,7 +172,7 @@ def ejection_count(ds):
     print(f"{stuck_percent}% of particles were ejected at the pole.")
     for timedelta in time_diffs:
         x+=1
-        print(f"Trajectory {x}: Particle trajectory spent {60-timedelta} days in range, {timedelta} days out of range.")
+        print(f"Trajectory {x}: Particle trajectory spent {60-timedelta} days within boundaries, {timedelta} days ejected.")
 
 
 def means(ds):
@@ -160,7 +223,4 @@ def means(ds):
     print("\nStandard Deviations:")
     for lat_stdv, z_stdv in zip(lat_stdvs, z_stdvs):
         y += 1
-        print(f"Trajectory: {y}, Latitude: {lat_stdv} degrees, Altitude: {z_stdv} km.")
-
-            
-        
+        print(f"Trajectory: {y}, Latitude: {lat_stdv} degrees, Altitude: {z_stdv} km.")   

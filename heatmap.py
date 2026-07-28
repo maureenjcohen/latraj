@@ -23,7 +23,7 @@ def basic_heatmap(ds):
             lon_raw, 
             lat_raw, 
             bins=[360, 180], 
-            range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
+            #range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
             density=False
         )
         heatmaps.append(heatmap)
