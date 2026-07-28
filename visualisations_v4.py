@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from parcels import read_particlefile
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 import seaborn as sns
 
 # %%
@@ -447,12 +448,21 @@ def count_heatmap(ds1, ds2, z_range, lat_range=(-90,-30),
     xlabels = [f"{v:g}" if i % lon_step == 0 else "" for i, v in enumerate(lon_c)]
     ylabels = [f"{v:g}" if i % lat_step == 0 else "" for i, v in enumerate(lat_disp)]
 
+    norm = LogNorm(vmin=1, vmax=vmax)
+    lat_edges_disp = _edges_from_centres(lat_disp)
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(cmap_obj(0.0))
+
     # 4. Draw the two heatmaps side by side
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
     for ax, grid_counts, label in zip(axes, grids, labels):
-        sns.heatmap(grid_counts, ax=ax, cmap=cmap, vmin=0, vmax=vmax,
-                    xticklabels=xlabels, yticklabels=ylabels,
-                    cbar_kws={"label": "Particle count"})
+        im = ax.pcolormesh(lon_edges, lat_edges_disp, grid_counts,
+                            cmap=cmap_obj, norm=norm)
+        ax.set_xticks(lon_c[::lon_step])
+        ax.set_xticklabels([f"{v:.0f}" for v in lon_c[::lon_step]])
+        ax.set_yticks(lat_disp[::lat_step])
+        ax.set_yticklabels([f"{v:.0f}" for v in lat_disp[::lat_step]])
+        fig.colorbar(im, ax=ax, label="Particle count")
         ax.set_title(f"{label}: {z_low:g}–{z_high:g} km")
         ax.set_xlabel("Longitude / deg")
         ax.set_ylabel("Latitude / deg")
