@@ -22,6 +22,12 @@ altitude_boundaries = {
 
 
 def get_boundaries():
+    """ Retrieves the upper and lower boundaries of the region 
+    the particle was initially placed in by extracting the initial
+    position from config.py and comparing it with dictionaries.
+    Takes the first element of a list, assumes that all elements are identical.
+    """
+    
     lat_lowbound, lat_highbound, z_lowbound, z_highbound = 0, 0, 0, 0
     for region, coords in latitude_boundaries.items():
         if config.PARTICLE_LAT[0] >= coords[0] and config.PARTICLE_LAT[0] <= coords[1]:
@@ -41,58 +47,60 @@ def sum_ranges(ds):
     lat_inrange, lat_outofrange = 0, 0
     z_inrange, z_outofrange = 0, 0
     
-    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees. Altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.") 
+    # 1. Retrieve data for each trajectory 
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
-        lon_raw = traj.lon.values
         lat_raw = traj.lat.values
         z_raw = traj.z.values
         stuck = traj.stuck.values
 
+    # 2. Apply boolean masks
         mask = stuck == 0.0
-        lon_raw = lon_raw[mask]
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
 
         lat_last.append(lat_raw[-1])
         z_last.append(z_raw[-1])
-
-    for value in lat_last:
-        if value > lat_highbound or value < lat_lowbound:
+        
+    lat_last_test = [lat_raw[-1] for lat_raw, traj_id in enumerate(ds.trajectory.values)]
+    print(lat_last_test)
+    print(lat_last)
+    #3. Calculate sums of trajectories ending in-range or out-of-range
+    for value1, value2 in zip(lat_last, z_last):
+        if value1 > lat_highbound or value1 < lat_lowbound:
             lat_outofrange += 1
-        elif value < lat_highbound and value > lat_lowbound:
+        elif value1 < lat_highbound and value1 > lat_lowbound:
             lat_inrange += 1
 
-    for value in z_last:
-        if value > z_highbound or value < z_lowbound:
+        if value2 > z_highbound or value2 < z_lowbound:
             z_outofrange += 1
-        elif value <= z_highbound and value >= z_lowbound: 
+        elif value2 <= z_highbound and value2 >= z_lowbound: 
             z_inrange += 1
 
+    # 4. Calculate percentage of trajectories which ended in-range or out-of-range
     total = len(ds.trajectory.values)
     lat_inpercent = (lat_inrange/total)*100
     lat_outpercent = (lat_outofrange/total)*100
-
     z_inpercent = (z_inrange/total)*100
     z_outpercent = (z_outofrange/total)*100
-    
-    print(f"{lat_inpercent}% of particles stayed in the latitude range.")
-    print(f"{lat_outpercent}% of particles ended up outside the latitude range.")
-    print(f"{z_inpercent}% of particles stayed in the altitude range.")
-    print(f"{z_outpercent}% of particles ended up outside the altitude range.")
+
+    # 5. Print results
+    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees. Altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")    
+    print(f"{lat_inpercent}% of trajectories ended within the latitude range.")
+    print(f"{lat_outpercent}% of trajectories ended outside the latitude range.")
+    print(f"{z_inpercent}% of trajectories ended within the altitude range.")
+    print(f"{z_outpercent}% of trajectories ended outside the altitude range.")
 
 
 def range_count(ds):
     ds = ds.compute()
     lat_lowbound, lat_highbound, z_lowbound, z_highbound = get_boundaries()
-    lat_table = PrettyTable(["Trajectory no.", "Days spent within latitude region", "Days spent out of latitude region"])
-    z_table = PrettyTable(["Trajectory no.", "Days spent within altitude region", "Days spent out of altitude region"])
     lat_time_diffs, z_time_diffs = [], []
     lat_inrange, lat_outofrange = 0, 0
     z_inrange, z_outofrange = 0, 0    
-    x, y = 0, 0
+    x = 0
 
-    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees. Altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")
+    #1. Retreive data for each trajectory
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         time = traj.time.values
@@ -100,19 +108,17 @@ def range_count(ds):
         z_raw = traj.z.values
         stuck = traj.stuck.values
 
+    #2. Apply boolean masks to isolate values where the trajectory goes out-of-range
         mask = stuck == 0.0
-        lat_raw = lat_raw[mask]
-        z_raw = z_raw[mask]
         time = time[mask]
+        lat_mask = np.where((lat_lowbound >= lat_raw[mask]) | (lat_highbound <= lat_raw[mask]), True, False)
+        z_mask = np.where((z_lowbound >= z_raw[mask]) | (z_highbound <= z_raw[mask]), True, False)
+        lat_time, z_time = time[lat_mask], time[z_mask]
 
-        lat_mask = np.where((lat_lowbound >= lat_raw) | (lat_highbound <= lat_raw), True, False)
-        z_mask = np.where((z_lowbound >= z_raw) | (z_highbound <= z_raw), True, False)
-        lat_time = time[lat_mask]
-        z_time = time[z_mask]
-        
+    #3. Calculate the timedelta for trajectories which went out-of-range
         if not np.size(lat_time) == 0:
             lat_timedelta = lat_time[-1] - lat_time[0]
-            lat_timedelta = int(lat_timedelta) / (24*3600000000000)
+            lat_timedelta = int(lat_timedelta) / (24*3600000000000) # Converting from nanoseconds to days
             lat_time_diffs.append(lat_timedelta)
         else:
             lat_timedelta = 0
@@ -120,38 +126,43 @@ def range_count(ds):
 
         if not np.size(z_time) == 0:
             z_timedelta = z_time[-1] - z_time[0]
-            z_timedelta = int(z_timedelta) / (24*3600000000000)
+            z_timedelta = int(z_timedelta) / (24*3600000000000) # Converting from nanoseconds to days
             z_time_diffs.append(z_timedelta)
         else:
             z_timedelta = 0
             z_time_diffs.append(z_timedelta)
 
+    # 4. Add to sum of trajectories which went out-of-range or stayed in-range
         if lat_timedelta == 0:
             lat_inrange += 1
         else:
             lat_outofrange += 1
-
+        
         if z_timedelta == 0:
             z_inrange += 1
         else:
             z_outofrange += 1
-          
+
+    # 5. Calculate the percentage of trajectories which went out-of-range or stayed in-range  
     total = len(ds.trajectory.values)
     lat_goodpercent = (lat_inrange/total)*100
     lat_badpercent = (lat_outofrange/total)*100
     z_goodpercent = (z_inrange/total)*100
     z_badpercent = (z_outofrange/total)*100
-    
+
+    # 6. Print percentage results
+    print(f"Latitude range: ({lat_lowbound}, {lat_highbound}) degrees. Altitude range: ({z_lowbound/1000}, {z_highbound/1000}) km.")
     print(f"{lat_goodpercent}% of particles stayed within the latitude region. {lat_badpercent}% of particles left the latitude region.")
     print(f"{z_goodpercent}% of particles stayed within the altitude region. {z_badpercent}% of particles left the altitude region.")
 
-    for lat_timedelta in lat_time_diffs:
+    # 7. Create tables showing the amount of time a trajectory spent in-range or out-of-range
+    lat_table = PrettyTable(["Trajectory no.", "Days spent within latitude region", "Days spent out of latitude region"])
+    z_table = PrettyTable(["Trajectory no.", "Days spent within altitude region", "Days spent out of altitude region"])
+    
+    for lat_timedelta, z_timedelta in zip(lat_time_diffs, z_time_diffs):
         x+=1
         lat_table.add_row([x, config.RUNTIME_DAYS-lat_timedelta, lat_timedelta])
-
-    for z_timedelta in z_time_diffs:
-        y+=1
-        z_table.add_row([y, config.RUNTIME_DAYS-z_timedelta, z_timedelta])
+        z_table.add_row([x, config.RUNTIME_DAYS-z_timedelta, z_timedelta])
         
     print(lat_table)
     print(z_table)
@@ -173,7 +184,7 @@ def ejection_count(ds):
         
         if not np.size(time) == 0:
             timedelta = time[-1] - time[0]
-            timedelta = int(timedelta) / (24*3600000000000)
+            timedelta = int(timedelta) / (24*3600000000000) # Convert from nanoseconds to days
             time_diffs.append(timedelta)
         else:
             timedelta = 0
@@ -202,13 +213,11 @@ def means(ds):
 
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
-        lon_raw = traj.lon.values
         lat_raw = traj.lat.values
         z_raw = traj.z.values/1000
         stuck = traj.stuck.values
 
         mask = stuck == 0.0
-        lon_raw = lon_raw[mask]
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
         

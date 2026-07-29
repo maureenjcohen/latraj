@@ -7,18 +7,20 @@ def basic_heatmap(ds):
     heatmaps, x_edges, y_edges = [], [], []
 
     ds = ds.compute()
-    # 1. Extract data
+    # 1. Extract data for each trajectory
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         lon_raw = traj.lon.values
         lat_raw = traj.lat.values
         z_raw = traj.z.values/1000
 
+    # 2. Apply boolean masks
         mask = stuck == 0.0
         lon_raw = lon_raw[mask]
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
-        
+
+    # 3. Calculate heatmap histogram
         heatmap, x_edge, y_edge = np.histogram2d(
             lon_raw, 
             lat_raw, 
@@ -30,12 +32,13 @@ def basic_heatmap(ds):
         x_edges.append(x_edge)
         y_edges.append(y_edge)
         
-    # 2. Create heatmap
+    # 4. Set heatmap edges
     xmin = min(x.min() for x in x_edges)
     ymin = min(y.min() for y in y_edges)
     xmax = max(x.max() for x in x_edges)
     ymax = max(y.max() for y in y_edges)
-    
+
+    # 5. Plot heatmap
     heatmap_matrix = np.sum(heatmaps, axis=0)
     plt.imshow(
         heatmap_matrix.T,
@@ -46,19 +49,21 @@ def basic_heatmap(ds):
         extent = [xmin, xmax, ymin, ymax]
     )
         
-    # 3. Format heatmap layout
+    # 6. Format heatmap layout and show plot
     plt.colorbar(label='Particle count')
     plt.xlabel('Longitude / deg')
     plt.ylabel('Latitude / deg')
     plt.title('Potential trajectories through Venus cloud decks')
     plt.show()
 
+    
 def double_heatmap(ds):
     fig, ax = plt.subplots(1,2, figsize=(11, None), constrained_layout=True)
     heatmaps_lat, xlat_edges, ylat_edges = [], [], []
     heatmaps_z, xz_edges, yz_edges = [], [], []
-
     ds = ds.compute()
+    
+    # 1. Retrieve data for each trajectory
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         lon_raw = traj.lon.values
@@ -66,11 +71,13 @@ def double_heatmap(ds):
         z_raw = traj.z.values/1000
         stuck = traj.stuck.values
 
+    # 2. Apply boolean masks
         mask = stuck == 0.0
         lon_raw = lon_raw[mask]
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
-        
+
+    # 3. Calculate heatmap histograms
         heatmap_lat, xlat_edge, ylat_edge = np.histogram2d(
             lon_raw, 
             lat_raw, 
@@ -95,7 +102,7 @@ def double_heatmap(ds):
         xz_edges.append(xz_edge)
         yz_edges.append(yz_edge)
         
-    # 2. Heatmap setup
+    # 3. Set heatmap edges
     xmin_lat = min(x.min() for x in xlat_edges)
     ymin_lat = min(y.min() for y in ylat_edges)
     xmax_lat = max(x.max() for x in xlat_edges)
@@ -109,7 +116,7 @@ def double_heatmap(ds):
     heatmap_latmatrix = np.sum(heatmaps_lat, axis=0)
     heatmap_zmatrix = np.sum(heatmaps_z, axis=0)
 
-    # 3. Plotting heatmaps
+    # 4. Plot heatmaps
     plt.subplot(1, 2, 1)
     plt.imshow(
         heatmap_latmatrix.T,
@@ -140,6 +147,6 @@ def double_heatmap(ds):
     plt.ylabel('Altitude / km')
     plt.colorbar(label='Particle count')
 
-    # 3. Format graph layouts
+    # 5. Add heatmap title and show plots
     fig.suptitle('Potential trajectories through the Venus cloud decks')
     plt.show()
