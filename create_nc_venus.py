@@ -51,13 +51,26 @@ heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  
        85.3, 86.8, 88.7, 91.2, 94.1, 97.])*1e3 
 # Heights of Venus model output in m
 
+# Scalar (non-wind) fields to carry through to the Parcels input file, mapping
+# the output name Parcels will see to the VPCM source variable name and units.
+# Each is written only if present in the input file, so older wind-only outputs
+# still preprocess without modification.
+SCALAR_FIELDS = {
+    'TEMP': ('temp', 'K'),
+    'PRES': ('pres', 'Pa'),
+    'RHO':  ('rho',  'kg/m3'),
+}
+
 ### Functions for reorganising and reformatting LMD Planets simulation output
 # %%
 def make_file(ncout, udata, vdata, wdata, hghts, lats, lons,
-              n_times, time_len):
+              n_times, time_len, scalars=None):
     """ Fill an empty Dataset with the full run: all timesteps written to a
         single netCDF file (time dimension = n_times) rather than one file per
-        step. udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes."""
+        step. udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes.
+
+        scalars is an optional {name: (data, units)} dict of extra 4D fields
+        (temperature, pressure, density) written on the same dims as the winds."""
     # Create the dimensions of the new file, same as the old file
     ncout.createDimension('time', n_times)
     ncout.createDimension('height', len(hghts))
@@ -100,6 +113,16 @@ def make_file(ncout, udata, vdata, wdata, hghts, lats, lons,
     wout.units = 'm/s'
     wout.interval_write = str(time_len)
     wout[:,:,:,:] = wdata
+
+    # Extra scalar fields, on the same dims and the same reversed lon ordering as
+    # the winds so Parcels reads them onto an identical grid.
+    if scalars is None:
+        scalars = {}
+    for name, (data, units) in scalars.items():
+        sout = ncout.createVariable(name, 'float32', ('time', 'height', 'lat', 'lon'))
+        sout.units = units
+        sout.interval_write = str(time_len)
+        sout[:,:,:,:] = data
 
     # Fill in the dimensions with the arrays from the original sim files
     latitude[:] = lats
@@ -159,19 +182,41 @@ def process_data(windcube, windunits, windtype):
 
     return winddata
 # %%
+def process_scalar(datacube, fieldname):
+    """ Reformat a scalar (non-wind) field for Parcels.
+
+    Scalars get the same longitude reversal as the winds (see module docstring
+    note 1) but no sign flip. Reversing the axis is a reindexing of the data;
+    only vector components pointing along that axis change sign, which is why
+    process_data negates U but nothing here is negated. """
+
+    print('Processing scalar field', fieldname)
+
+    return datacube[:,:,:,::-1]
+# %%
 def selector(ncfile, inputtimes, inputheights, trange=(0,None), hrange=(0,None)):
     """ Function that selects subsets of the data to include in the Parcels
         input files
-        e.g. a subset of the time range, or a subset of the height levels """
-    
+        e.g. a subset of the time range, or a subset of the height levels
+
+        Scalar fields in SCALAR_FIELDS are picked up when the input file has
+        them and skipped when it does not, so wind-only outputs still work. """
+
     ucube = ncfile['vitu'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
     vcube = ncfile['vitv'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
     wcube = ncfile['vitwz'][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
 
+    scalar_cubes = {}
+    for name, (srcname, _units) in SCALAR_FIELDS.items():
+        if srcname in ncfile.variables:
+            scalar_cubes[name] = ncfile[srcname][trange[0]:trange[1],hrange[0]:hrange[1],:,:]
+        else:
+            print('Field', srcname, 'not found in input file, skipping')
+
     select_times = inputtimes[trange[0]:trange[1]]
     select_heights = inputheights[hrange[0]:hrange[1]]
 
-    return ucube, vcube, wcube, select_times, select_heights
+    return ucube, vcube, wcube, scalar_cubes, select_times, select_heights
 
 # %%
 def run_preprocess(inputfile, savedir, testname):
@@ -182,17 +227,23 @@ def run_preprocess(inputfile, savedir, testname):
     
     lons, lats, times, t_interval = extract_metadata(inputfile)
 
-    ucube, vcube, wcube, selected_times, selected_heights = selector(inputfile, times, heights, trange=t_select, hrange=h_select)
+    ucube, vcube, wcube, scalar_cubes, selected_times, selected_heights = selector(inputfile, times, heights, trange=t_select, hrange=h_select)
 
     u_data = process_data(ucube, 'm/s', 'U')
     v_data = process_data(vcube, 'm/s', 'V')
     w_data = process_data(wcube, 'm/s', 'W')
 
+    # Named scalar_data, not rho/temp/pres: `rho` at module scope is the scalar
+    # background density from config.py that process_data uses for the Pa/s
+    # conversion, and must not be shadowed here.
+    scalar_data = {name: (process_scalar(cube, name), SCALAR_FIELDS[name][1])
+                   for name, cube in scalar_cubes.items()}
+
     # Write every timestep into a single netCDF file (one file per run),
     # rather than one file per timestep.
     ncout = nc.Dataset(savedir + '/' + testname + '.nc', 'w', format='NETCDF4')
     make_file(ncout, u_data, v_data, w_data, selected_heights,
-              lats, lons, len(selected_times), t_interval)
+              lats, lons, len(selected_times), t_interval, scalars=scalar_data)
     ncout.close(); del ncout
 
 # %%
