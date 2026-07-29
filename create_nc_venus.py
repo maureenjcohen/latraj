@@ -38,17 +38,38 @@ experiment_name = config.EXPERIMENT_NAME  # For labelling new files
 outputdir = config.OUTPUT_DIR
 t_select = config.T_SELECT        # Range of times to be included
 h_select = config.H_SELECT        # Range of heights to be included
-rho = config.RHO                  # Density of atmosphere in kg/m3 (for Pa/s -> m/s vertical wind)
-g_constant = config.G_CONSTANT    # Gravitational constant of planet in m/s2
+rho = 65                # Density of atmosphere in kg/m3 (for Pa/s -> m/s vertical wind)
+g_constant = 8.87   # Gravitational constant of planet in m/s2
 # If your atmospheric density varies significantly within the model domain,
 # you will have to get a density cube.
 # The model level heights below are a fixed property of the Venus PCM output,
 # not a per-run setting, so they stay here rather than in config.py.
-heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  8.6,
-       11.1, 14., 17.3, 20.9, 24.7, 28.5, 32.1, 35.4, 38.6, 41.6, 44.4,
-       47.1, 49.7, 52.1, 54.3, 56.4, 58.4, 60.3, 62.1, 63.9, 65.6, 67.4,
-       69., 70.7, 72.3, 73.9, 75.4, 76.9, 78.4, 79.8, 81.2, 82.6, 84.,
-       85.3, 86.8, 88.7, 91.2, 94.1, 97.])*1e3 
+# heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  8.6,
+#        11.1, 14., 17.3, 20.9, 24.7, 28.5, 32.1, 35.4, 38.6, 41.6, 44.4,
+#        47.1, 49.7, 52.1, 54.3, 56.4, 58.4, 60.3, 62.1, 63.9, 65.6, 67.4,
+#        69., 70.7, 72.3, 73.9, 75.4, 76.9, 78.4, 79.8, 81.2, 82.6, 84.,
+#        85.3, 86.8, 88.7, 91.2, 94.1, 97.])*1e3 
+
+heights = [9.45306290e-03, 4.83510271e-02, 1.53046221e-01, 3.73352647e-01,
+       7.54337728e-01, 1.33960199e+00, 2.17016840e+00, 3.28359985e+00,
+       4.71279430e+00, 6.48478937e+00, 8.61961460e+00, 1.11300869e+01,
+       1.40210838e+01, 1.72868519e+01, 2.09060841e+01, 2.47483273e+01,
+       2.85367489e+01, 3.21012650e+01, 3.54501762e+01, 3.85974350e+01,
+       4.15684090e+01, 4.43950195e+01, 4.71000137e+01, 4.96712570e+01,
+       5.20832405e+01, 5.43336220e+01, 5.64306679e+01, 5.83991661e+01,
+       6.02850800e+01, 6.21196480e+01, 6.39083824e+01, 6.56521988e+01,
+       6.73622131e+01, 6.90550003e+01, 7.07164383e+01, 7.23295288e+01,
+       7.38933105e+01, 7.54046097e+01, 7.68734818e+01, 7.83174973e+01,
+       7.97435608e+01, 8.11459122e+01, 8.25166473e+01, 8.38473129e+01,
+       8.51307755e+01, 8.65320282e+01, 8.83726730e+01, 9.07071533e+01,
+       9.34497375e+01, 9.65266037e+01, 9.90068893e+01, 1.00908829e+02,
+       1.02824753e+02, 1.04765404e+02, 1.06736778e+02, 1.08729904e+02,
+       1.10737305e+02, 1.12745575e+02, 1.14689415e+02, 1.16525398e+02,
+       1.18274094e+02, 1.19964310e+02, 1.21610733e+02, 1.23218185e+02,
+       1.24797585e+02, 1.26358299e+02, 1.27900208e+02, 1.29420120e+02,
+       1.30924683e+02, 1.32434402e+02, 1.33977646e+02, 1.35579971e+02,
+       1.37256210e+02, 1.39007202e+02, 1.40822159e+02, 1.42683762e+02,
+       1.44574203e+02, 1.46479889e+02]*1e3
 # Heights of Venus model output in m
 
 # Scalar (non-wind) fields to carry through to the Parcels input file, mapping
