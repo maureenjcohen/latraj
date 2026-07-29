@@ -56,17 +56,13 @@ def final_ranges(ds):
         z_raw = traj.z.values
         stuck = traj.stuck.values
 
-    # 2. Apply boolean masks
+    # 2. Apply boolean masks to filter out trajectories which got stuck:
         mask = stuck == 0.0
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
 
         lat_last.append(lat_raw[-1])
         z_last.append(z_raw[-1])
-        
-    lat_last_test = [lat_raw[-1] for lat_raw, traj_id in enumerate(ds.trajectory.values)]
-    print(lat_last_test)
-    print(lat_last)
     
     #3. Calculate sums of trajectories ending in-range or out-of-range
     for value1, value2 in zip(lat_last, z_last):
@@ -105,7 +101,7 @@ def range_count(ds):
     z_inrange, z_outofrange = 0, 0    
     x = 0
 
-    #1. Retreive data for each trajectory:
+    # 1. Retrieve data for each trajectory:
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         time = traj.time.values
@@ -113,37 +109,30 @@ def range_count(ds):
         z_raw = traj.z.values
         stuck = traj.stuck.values
 
-    #2. Apply boolean masks to isolate values where the trajectory goes out-of-range:
+    # 2. Apply boolean masks to isolate values where the trajectory goes out-of-range:
         mask = stuck == 0.0
         time = time[mask]
         lat_mask = np.where((lat_lowbound >= lat_raw[mask]) | (lat_highbound <= lat_raw[mask]), True, False)
         z_mask = np.where((z_lowbound >= z_raw[mask]) | (z_highbound <= z_raw[mask]), True, False)
         lat_time, z_time = time[lat_mask], time[z_mask]
 
-    #3. Calculate the timedelta for trajectories which went out-of-range:
+    # 3. Calculate the timedelta for trajectories which went out-of-range:
         if not np.size(lat_time) == 0:
             lat_timedelta = int(lat_time[-1] - lat_time[0]) / (24*3600000000000) # Converting from nanoseconds to days
+            lat_outofrange += 1
         else:
             lat_timedelta = 0
+            lat_inrange += 1 # for some reason this only works if I make a separate if loop saying if lat_timedelta == 0 !
 
         if not np.size(z_time) == 0:
             z_timedelta = int(z_time[-1] - z_time[0]) / (24*3600000000000) # Converting from nanoseconds to days
+            z_outofrange += 1
         else:
             z_timedelta = 0
+            z_inrange += 1 
         
         lat_time_diffs.append(lat_timedelta)
         z_time_diffs.append(z_timedelta)
-
-    # 4. Calculate sum of trajectories which went out-of-range or stayed in-range:
-        if lat_timedelta == 0:
-            lat_inrange += 1
-        else:
-            lat_outofrange += 1
-        
-        if z_timedelta == 0:
-            z_inrange += 1
-        else:
-            z_outofrange += 1
 
     # 5. Calculate the percentage of trajectories which went out-of-range or stayed in-range:
     total = len(ds.trajectory.values)
@@ -176,17 +165,18 @@ def ejection_count(ds):
     ds = ds.compute()
     time_diffs = []
     stuck_sum = 0
-    x = 0
+    
     # 1. Retrieve data from each trajectory:
     for i, traj_id in enumerate(ds.trajectory.values):
         traj = ds.sel(trajectory=traj_id)
         time = traj.time.values
         stuck = traj.stuck.values
-        
+
+    # 2. Apply boolean masks to isolate stuck values:
         mask = stuck == 1
         time = time[mask]
 
-    # 2. Calculate timedelta for trajectories which got ejected:
+    # 3. Calculate timedelta for trajectories which got ejected:
         if not np.size(time) == 0:
             timedelta = int(time[-1] - time[0]) / (24*3600000000000) # Converting from nanoseconds to days
             stuck_sum += 1
@@ -194,16 +184,14 @@ def ejection_count(ds):
             timedelta = 0
         time_diffs.append(timedelta)
 
-    # 3. Calculate the percentage of trajectories which were ejected:
-    total = len(ds.trajectory.values)
-    stuck_percent = (stuck_sum/total)*100
+    # 4. Calculate the percentage of trajectories which were ejected:
+    stuck_percent = (stuck_sum/len(ds.trajectory.values))*100
     print(f"{stuck_percent}% of particles were ejected at the pole.")
 
-    # 4. Create table showing the amount of time spent ejected:
+    # 5. Create table showing the amount of time spent ejected:
     stuck_table = PrettyTable(["Trajectory no.", "Days spent within boundaries", "Days spent ejected"])
-    for timedelta in time_diffs:
-        x+=1
-        stuck_table.add_row([x, 60-timedelta, timedelta])
+    for position, timedelta in enumerate(time_diffs):
+        stuck_table.add_row([position, 60-timedelta, timedelta])
     print(stuck_table)
 
 
@@ -224,7 +212,7 @@ def means(ds):
         z_raw = traj.z.values/1000
         stuck = traj.stuck.values
 
-    # 2. Apply boolean masks:
+    # 2. Apply boolean masks to filter out trajectories which got stuck:
         mask = stuck == 0.0
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
