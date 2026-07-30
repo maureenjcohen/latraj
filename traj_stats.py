@@ -2,22 +2,21 @@ import xarray as xr
 import numpy as np
 import datetime as dt
 import config
-import prettytable
 from prettytable import PrettyTable
 
 latitude_boundaries = {
-    'South Poles': [-90, -60],
-    'South Midlatitudes': [-60, -40],
-    'South Equator': [-40, 0],
-    'North Equator': [0, 40],
-    'North Midlatitudes': [40, 60],
+    'South Poles': [-90, -59],
+    'South Midlatitudes': [-60, -39],
+    'South Equator': [-40, -1],
+    'North Equator': [0, 39],
+    'North Midlatitudes': [40, 59],
     'North Poles': [60, 90]
 }
 
 altitude_boundaries = {
     'Deep Atmosphere': [0, 48000],
-    'Convective Clouds': [48000, 55000],
-    'Upper Clouds': [55000, 70000]
+    'Convective Clouds': [48001, 55000],
+    'Upper Clouds': [55001, 70000]
 }
 
 
@@ -27,17 +26,22 @@ def get_boundaries():
     position from config.py and comparing it with dictionaries.
     Takes the first element of a list, assumes that all elements are identical.
     """
-    
-    lat_lowbound, lat_highbound, z_lowbound, z_highbound = 0, 0, 0, 0
+    lat_lowbound, lat_highbound, z_lowbound, z_highbound = None, None, None, None
+    if isinstance(config.PARTICLE_LAT, (int, float)):
+        config.PARTICLE_LAT = [config.PARTICLE_LAT]
+    if isinstance(config.PARTICLE_DEPTH, (int, float)):
+        config.PARTICLE_DEPTH = [config.PARTICLE_DEPTH]
     for region, coords in latitude_boundaries.items():
         if config.PARTICLE_LAT[0] >= coords[0] and config.PARTICLE_LAT[0] <= coords[1]:
             lat_lowbound, lat_highbound = coords[0], coords[1]
+            if lat_lowbound is None or lat_highbound is None:
+                raise ValueError('PARTICLE_LAT is outside all latitude regions')
     for region, coords in altitude_boundaries.items():
         if config.PARTICLE_DEPTH[0] >= coords[0] and config.PARTICLE_DEPTH[0] <= coords[1]:
             z_lowbound, z_highbound = coords[0], coords[1]
+            if z_lowbound is None or z_highbound is None:
+                raise ValueError('PARTICLE_DEPTH is outside all altitude regions')
     return lat_lowbound, lat_highbound, z_lowbound, z_highbound
-    raise TypeError('Does not accept ints or floats')
-    raise ValueError('Input value too high or too low')
 
     
 def final_ranges(ds):
@@ -57,21 +61,23 @@ def final_ranges(ds):
         stuck = traj.stuck.values
 
     # 2. Apply boolean masks to filter out trajectories which got stuck:
-        mask = stuck == 0.0
+        mask = (stuck == 0.0) & np.isfinite(lat_raw) & np.isfinite(z_raw)
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
+        if lat_raw.size == 0:
+            continue
 
         lat_last.append(lat_raw[-1])
         z_last.append(z_raw[-1])
     
     #3. Calculate sums of trajectories ending in-range or out-of-range
     for value1, value2 in zip(lat_last, z_last):
-        if value1 > lat_highbound or value1 < lat_lowbound:
+        if value1 >= lat_highbound or value1 <= lat_lowbound:
             lat_outofrange += 1
-        elif value1 < lat_highbound and value1 > lat_lowbound:
+        elif value1 <= lat_highbound and value1 >= lat_lowbound:
             lat_inrange += 1
 
-        if value2 > z_highbound or value2 < z_lowbound:
+        if value2 >= z_highbound or value2 <= z_lowbound:
             z_outofrange += 1
         elif value2 <= z_highbound and value2 >= z_lowbound: 
             z_inrange += 1
@@ -110,22 +116,23 @@ def range_count(ds):
         stuck = traj.stuck.values
 
     # 2. Apply boolean masks to isolate values where the trajectory goes out-of-range:
-        mask = stuck == 0.0
+        mask = (stuck == 0.0) & np.isfinite(lat_raw) & np.isfinite(z_raw)
         time = time[mask]
+        dt_days = (time[1] - time[0]) / np.timedelta64(1, 'D')
         lat_mask = np.where((lat_lowbound >= lat_raw[mask]) | (lat_highbound <= lat_raw[mask]), True, False)
         z_mask = np.where((z_lowbound >= z_raw[mask]) | (z_highbound <= z_raw[mask]), True, False)
         lat_time, z_time = time[lat_mask], time[z_mask]
 
-    # 3. Calculate the timedelta for trajectories which went out-of-range:
+    # 3. Calculate the timedelta for trajectories which went out-of-range:     
         if not np.size(lat_time) == 0:
-            lat_timedelta = int(lat_time[-1] - lat_time[0]) / (24*3600000000000) # Converting from nanoseconds to days
+            lat_timedelta = np.size(lat_time)*dt_days
             lat_outofrange += 1
         else:
             lat_timedelta = 0
-            lat_inrange += 1 # for some reason this only works if I make a separate if loop saying if lat_timedelta == 0 !
+            lat_inrange += 1 
 
         if not np.size(z_time) == 0:
-            z_timedelta = int(z_time[-1] - z_time[0]) / (24*3600000000000) # Converting from nanoseconds to days
+            z_timedelta = np.size(z_time)*dt_days
             z_outofrange += 1
         else:
             z_timedelta = 0
@@ -173,16 +180,16 @@ def ejection_count(ds):
         stuck = traj.stuck.values
 
     # 2. Apply boolean masks to isolate stuck values:
-        mask = stuck == 1
+        mask = (stuck == 1)
         time = time[mask]
 
     # 3. Calculate timedelta for trajectories which got ejected:
         if not np.size(time) == 0:
-            timedelta = int(time[-1] - time[0]) / (24*3600000000000) # Converting from nanoseconds to days
+            timedelta = (time[-1] - time[0]) / np.timedelta64(1, 'D')
             stuck_sum += 1
         else:
             timedelta = 0
-        time_diffs.append(timedelta)
+        time_diffs.append((traj_id, timedelta))
 
     # 4. Calculate the percentage of trajectories which were ejected:
     stuck_percent = (stuck_sum/len(ds.trajectory.values))*100
@@ -190,8 +197,8 @@ def ejection_count(ds):
 
     # 5. Create table showing the amount of time spent ejected:
     stuck_table = PrettyTable(["Trajectory no.", "Days spent within boundaries", "Days spent ejected"])
-    for position, timedelta in enumerate(time_diffs):
-        stuck_table.add_row([position, config.RUNTIME_DAYS-timedelta, timedelta])
+    for traj_id, timedelta in time_diffs:
+        stuck_table.add_row([traj_id+1, config.RUNTIME_DAYS-timedelta, timedelta])
     print(stuck_table)
 
 
@@ -213,9 +220,11 @@ def means(ds):
         stuck = traj.stuck.values
 
     # 2. Apply boolean masks to filter out trajectories which got stuck:
-        mask = stuck == 0.0
+        mask = (stuck == 0.0) & np.isfinite(lat_raw) & np.isfinite(z_raw)
         lat_raw = lat_raw[mask]
         z_raw = z_raw[mask]
+        if lat_raw.size == 0:
+            continue
 
     # 3. Calculate means & standard deviations for each trajectory:
         lat_mean = np.mean(lat_raw)

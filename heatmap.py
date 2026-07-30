@@ -3,43 +3,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def basic_heatmap(ds):
+    """ Plots a heatmap of latitude vs longitude for all trajectories.
+    Includes a colorbar showing the particle count in each bin."""
     fig, ax = plt.subplots(1,1)
-    heatmaps, x_edges, y_edges = [], [], []
-
     ds = ds.compute()
+    
     # 1. Extract data for each trajectory
-    for i, traj_id in enumerate(ds.trajectory.values):
-        traj = ds.sel(trajectory=traj_id)
-        lon_raw = traj.lon.values
-        lat_raw = traj.lat.values
-        z_raw = traj.z.values/1000
+    traj = ds.sel(trajectory=traj_id)
+    lon_raw = ds.lon.values.ravel()
+    lat_raw = ds.lat.values.ravel()
+    z_raw = ds.z.values.ravel()/1000
+    stuck = ds.stuck.values.ravel()
 
     # 2. Apply boolean masks
-        mask = stuck == 0.0
-        lon_raw = lon_raw[mask]
-        lat_raw = lat_raw[mask]
-        z_raw = z_raw[mask]
+    mask = (stuck == 0.0) & np.isfinite(lon_raw) & np.isfinite(lat_raw)
+    lon_raw = lon_raw[mask]
+    lat_raw = lat_raw[mask]
+    z_raw = z_raw[mask]
 
     # 3. Calculate heatmap histogram
-        heatmap, x_edge, y_edge = np.histogram2d(
-            lon_raw, 
-            lat_raw, 
-            bins=[360, 180], 
-            #range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
-            density=False
-        )
-        heatmaps.append(heatmap)
-        x_edges.append(x_edge)
-        y_edges.append(y_edge)
+    heatmap_matrix, x_edge, y_edge = np.histogram2d(lon_raw, lat_raw, bins=[360, 180], range=[[-180, 180], -[90, 90]], density=False)
         
     # 4. Set heatmap edges
-    xmin = min(x.min() for x in x_edges)
-    ymin = min(y.min() for y in y_edges)
-    xmax = max(x.max() for x in x_edges)
-    ymax = max(y.max() for y in y_edges)
+    xmin, xmax = x_edge[0], x_edge[-1]
+    ymin, ymax = y_edge[0], y_edge[-1]
 
     # 5. Plot heatmap
-    heatmap_matrix = np.sum(heatmaps, axis=0)
     plt.imshow(
         heatmap_matrix.T,
         cmap = 'viridis',
@@ -58,71 +47,53 @@ def basic_heatmap(ds):
 
     
 def double_heatmap(ds):
-    fig, ax = plt.subplots(1,2, figsize=(11, None), constrained_layout=True)
-    heatmaps_lat, xlat_edges, ylat_edges = [], [], []
-    heatmaps_z, xz_edges, yz_edges = [], [], []
+    """Plots two heatmaps for all trajectories, one showing latitude vs
+    longitude and the other showing altitude vs longitude. Both heatmaps have
+    colorbars showing the particle count per bin, though only one is titled."""
+    fig, ax = plt.subplots(1,2, figsize=(11, 6), constrained_layout=True)
     ds = ds.compute()
     
     # 1. Retrieve data for each trajectory
-    for i, traj_id in enumerate(ds.trajectory.values):
-        traj = ds.sel(trajectory=traj_id)
-        lon_raw = traj.lon.values
-        lat_raw = traj.lat.values
-        z_raw = traj.z.values/1000
-        stuck = traj.stuck.values
+    lon_raw = ds.lon.values.ravel()
+    lat_raw = ds.lat.values.ravel()
+    z_raw = ds.z.values.ravel()/1000
+    stuck = ds.stuck.values.ravel()
 
     # 2. Apply boolean masks
-        mask = stuck == 0.0
-        lon_raw = lon_raw[mask]
-        lat_raw = lat_raw[mask]
-        z_raw = z_raw[mask]
+    mask = (stuck == 0.0) & np.isfinite(lon_raw) & np.isfinite(lat_raw) & np.isfinite(z_raw)
+    lon_raw = lon_raw[mask]
+    lat_raw = lat_raw[mask]
+    z_raw = z_raw[mask]
 
     # 3. Calculate heatmap histograms
-        heatmap_lat, xlat_edge, ylat_edge = np.histogram2d(
-            lon_raw, 
-            lat_raw, 
-            bins=[360, 180], 
-            range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
-            density=False
-        )
+    heatmap_latmatrix, xlat_edge, ylat_edge = np.histogram2d(
+        lon_raw, 
+        lat_raw, 
+        bins=[360, 180], 
+        range=[[-180, 180], [-90, 90]], # Hash out as needed to "zoom in"
+        density=False
+    )
 
-        heatmap_z, xz_edge, yz_edge = np.histogram2d(
-            lon_raw,
-            z_raw,
-            bins=[360, 150],
-            range=[[-180, 180], [0, 80]],
-            density=False
-        )
-        
-        heatmaps_lat.append(heatmap_lat)
-        xlat_edges.append(xlat_edge)
-        ylat_edges.append(ylat_edge)
-
-        heatmaps_z.append(heatmap_z)
-        xz_edges.append(xz_edge)
-        yz_edges.append(yz_edge)
+    heatmap_zmatrix, xz_edge, yz_edge = np.histogram2d(
+        lon_raw,
+        z_raw,
+        bins=[360, 150],
+        range=[[-180, 180], [0, 80]], # Hash out as needed to "zoom in"
+        density=False
+    )
         
     # 3. Set heatmap edges
-    xmin_lat = min(x.min() for x in xlat_edges)
-    ymin_lat = min(y.min() for y in ylat_edges)
-    xmax_lat = max(x.max() for x in xlat_edges)
-    ymax_lat = max(y.max() for y in ylat_edges)
-        
-    xmin_z = min(x.min() for x in xz_edges)
-    ymin_z = min(y.min() for y in yz_edges)
-    xmax_z = max(x.max() for x in xz_edges)
-    ymax_z = max(y.max() for y in yz_edges)
-    
-    heatmap_latmatrix = np.sum(heatmaps_lat, axis=0)
-    heatmap_zmatrix = np.sum(heatmaps_z, axis=0)
+    xmin_lat, xmax_lat = xlat_edge[0], xlat_edge[-1]
+    ymin_lat, ymax_lat = ylat_edge[0], ylat_edge[-1]
+
+    xmin_z, xmax_z = xz_edge[0], xz_edge[-1]
+    ymin_z, ymax_z = yz_edge[0], yz_edge[-1]
 
     # 4. Plot heatmaps
     plt.subplot(1, 2, 1)
     plt.imshow(
         heatmap_latmatrix.T,
         cmap = 'viridis',
-        #vmin = 0,
-        #vmax = 200,
         aspect = "auto",
         interpolation = 'none',
         origin = 'lower',
@@ -130,14 +101,12 @@ def double_heatmap(ds):
     )
     plt.xlabel('Longitude / deg')
     plt.ylabel('Latitude / deg')
-    plt.colorbar()
+    plt.colorbar(label='Particle count', orientation='horizontal')
 
     plt.subplot(1, 2, 2)
     plt.imshow(
         heatmap_zmatrix.T,
         cmap = 'viridis',
-        #vmin = 0,
-        #vmax = 200,
         aspect="auto",
         interpolation = 'none',
         origin = 'lower',
@@ -145,7 +114,7 @@ def double_heatmap(ds):
     )
     plt.xlabel('Longitude / deg')
     plt.ylabel('Altitude / km')
-    plt.colorbar(label='Particle count')
+    plt.colorbar(label='Particle count', orientation='horizontal')
 
     # 5. Add heatmap title and show plots
     fig.suptitle('Potential trajectories through the Venus cloud decks')
