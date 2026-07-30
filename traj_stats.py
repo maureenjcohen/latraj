@@ -191,7 +191,7 @@ def ejection_count(ds):
     # 5. Create table showing the amount of time spent ejected:
     stuck_table = PrettyTable(["Trajectory no.", "Days spent within boundaries", "Days spent ejected"])
     for position, timedelta in enumerate(time_diffs):
-        stuck_table.add_row([position, 60-timedelta, timedelta])
+        stuck_table.add_row([position, config.RUNTIME_DAYS-timedelta, timedelta])
     print(stuck_table)
 
 
