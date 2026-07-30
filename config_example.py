@@ -1,4 +1,4 @@
-http://localhost:8888/lab?token=60a6d0017b83416cd86410ef6595266c96e96f494f321e09""" Per-run and machine-specific configuration for the latraj pipeline.
+""" Per-run and machine-specific configuration for the latraj pipeline.
 
     HOW TO USE THIS FILE
     --------------------
