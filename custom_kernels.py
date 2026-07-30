@@ -15,11 +15,23 @@ class VenusParticle(JITParticle):
     tau = 20 min), which is negligible against the multi-day integration.
     """
     u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
+    stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
 def CheckOutOfBounds(particle, fieldset, time):
     if particle.state == StatusCode.ErrorOutOfBounds:
         particle.delete()
+
+# %%
+def boundary_stick(particle, fieldset, time):
+    """ Freeze particles that leave the domain (e.g. over the pole) at their
+        last in-bounds position instead of crashing the simulation. """
+    if particle.state == StatusCode.ErrorOutOfBounds:
+        particle_dlon = 0.0
+        particle_dlat = 0.0
+        particle_ddepth = 0.0
+        particle.stuck = 1
+        particle.state = StatusCode.Success
 
 # %%
 def periodicBC(particle, fieldset, time):
