@@ -18,6 +18,16 @@ class VenusParticle(JITParticle):
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
+class BalloonParticle(JITParticle):
+    """ Custom particle class for Aerobot simulations.
+
+    Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
+    and v_bal, the current balloon volume (m^3), starting at ....
+    """
+    w_bal = Variable('w_bal', dtype=np.float32, initial=0.0, to_write=True)
+    v_bal = Variable('v_bal', dtype=np.float32, initial=0.0, to_write=True)
+
+# %%
 def CheckOutOfBounds(particle, fieldset, time):
     if particle.state == StatusCode.ErrorOutOfBounds:
         particle.delete()
@@ -108,8 +118,35 @@ def convection_ou(particle, fieldset, time):
         g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
         particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
         particle_ddepth += fieldset.conv_sigma * env * particle.u_conv * particle.dt
+        
 # %%
 def surface_bounce(particle, fieldset, time):
      if particle.state == StatusCode.ErrorThroughSurface:
           particle_ddepth = 0.0
           particle.state = StatusCode.Success
+
+# %%
+def balloon_vertical(particle, fieldset, time):
+    total_displacement = 0
+    dt_inner = timedelta(seconds=15)
+    rho_atm = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
+    w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
+    
+    V = 10.86 * particle.m_gas_ZP / rho_atm
+    if V > fieldset.V_infl:
+        V = fieldset.V_infl      
+    m_virtual = fieldset.C_m * rho_atm * V
+    
+    for i in range(dt_inner):
+        w_rel = particle.w_bal - w_atm
+        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel * math.fabs(w_rel)
+        F_net = rho_atm*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag
+        particle.w_bal = w_eq + (particle.w_bal - w_eq) * math.exp(-dt_inner / fieldset.conv_tau)
+        acceleration = F_net / (fieldset.m_total + m_virtual)
+        # figure out how to calc displacement 
+        # add displacement to total
+    # add displacement to particle ddepth
+        
+        
+    
+    
