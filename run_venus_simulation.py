@@ -92,6 +92,9 @@ def main():
     fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
     fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
     fieldset.add_constant("V_infl", 72.6) # Enclosed volume of the profile [m^3]
+    # Masses:
+    fieldset.add_constant("M_He", 4.0026) # Molar mass of helium [g/mol]
+    fieldset.add_constant("M_Venus_atm", 43.45) # Molar mass of Venus' atmosphere [g/mol]
     # Gas constants:
     fieldset.add_constant("R_universal", 8.3145) # Universal gas constant [J/mol K]
     fieldset.add_constant("R_He", 2077.1) # Helium gas constant [J/kg K]
@@ -99,7 +102,7 @@ def main():
     fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     # Vehicle masses:
     fieldset.add_constant("m_total", 62) # Total mass: Helium + envelopes + payload [kg]
-    fieldset.add_constant("m_gas_ZP", ) # Mass of helium in the ZP balloon [kg]
+    fieldset.add_constant("m_gas_ZP", 54.76) # Mass of helium in the ZP balloon [kg]
     #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
 
     # Create particle set (initial positions come from config.py)

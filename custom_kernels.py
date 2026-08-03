@@ -2,6 +2,7 @@
 # %% Imports
 import parcels
 from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, StatusCode, Variable
+from datetime import timedelta
 import math
 import numpy as np
 
@@ -127,26 +128,31 @@ def surface_bounce(particle, fieldset, time):
 
 # %%
 def balloon_vertical(particle, fieldset, time):
-    total_displacement = 0
-    dt_inner = timedelta(seconds=15)
-    rho_atm = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
-    w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
-    
-    V = 10.86 * particle.m_gas_ZP / rho_atm
+    """ write a detailed description here like in example kernels"""
+    displacement = 0.0
+    dt_inner = timedelta(seconds=15) # not sure whether this can be looped over but I hope it can be!
+    rho_atm = fieldset.RHO[time, particle.depth, particle.lat, particle.lon] # Atmospheric density [kg/m^3]
+    w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon] # Atmospheric vertical velocity [m/s]
+
+    # Compute displaced volume:
+    V = 10.86 * particle.m_gas_ZP / rho_atm # Displaced volume [m^3]
     if V > fieldset.V_infl:
-        V = fieldset.V_infl      
-    m_virtual = fieldset.C_m * rho_atm * V
-    
+        V = fieldset.V_infl # Caps volume at maximum inflation 
+
+    # Compute outer-loop variables:
+    m_virtual = fieldset.C_m * rho_atm * V # The apparent extra mass when a body accelerates through fluid [kg]
+    w_eq = math.sqrt(2*(rho_atm*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus)/(rho_atm*fieldset.C_D_top*fieldset.A_top)) # Equilibrium velocity [m/s]
+
+    # Progress vertical velocity and compute particle displacement at each sub-step:
     for i in range(dt_inner):
         w_rel = particle.w_bal - w_atm
-        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel * math.fabs(w_rel)
-        F_net = rho_atm*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag
-        particle.w_bal = w_eq + (particle.w_bal - w_eq) * math.exp(-dt_inner / fieldset.conv_tau)
-        acceleration = F_net / (fieldset.m_total + m_virtual)
-        # figure out how to calc displacement 
-        # add displacement to total
-    # add displacement to particle ddepth
+        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * C_D_top * A_top * math.abs(w_rel)) # Vertical drag relaxation [s]
+        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel * math.fabs(w_rel) # Buoyancy force [N]
+        F_net = rho_atm*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force from Eq. (1)
+        particle.w_bal = w_eq + (particle.w_bal - w_eq) * math.exp(-dt_inner / tau_vertical) # Update vertical velocity
+        #acceleration = F_net / (m_total + m_virtual)
+        #displacement += particle.w_bal*dt_inner - 0.5*acceleration*(dt_inner**2) # suvat, not sure if applicable
+        displacement += particle.w_bal*dt_inner # or particle.dt?
         
-        
-    
-    
+    # Update particle altitude:
+    particle_ddepth += displacement
