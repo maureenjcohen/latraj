@@ -43,14 +43,27 @@ g_constant = 8.87   # Gravitational constant of planet in m/s2
 # If your atmospheric density varies significantly within the model domain,
 # you will have to get a density cube.
 # The model level heights below are a fixed property of the Venus PCM output,
-# not a per-run setting, so they stay here rather than in config.py.
-# heights = np.array([0.,  0.05,  0.2,  0.4,  0.8,  1.3,  2.2,  3.3,  4.7,  6.5,  8.6,
-#        11.1, 14., 17.3, 20.9, 24.7, 28.5, 32.1, 35.4, 38.6, 41.6, 44.4,
-#        47.1, 49.7, 52.1, 54.3, 56.4, 58.4, 60.3, 62.1, 63.9, 65.6, 67.4,
-#        69., 70.7, 72.3, 73.9, 75.4, 76.9, 78.4, 79.8, 81.2, 82.6, 84.,
-#        85.3, 86.8, 88.7, 91.2, 94.1, 97.])*1e3 
+# not a per-run setting, so they stay here rather than in config.py. VPCM runs
+# come on either a 50-level or a 78-level vertical grid; both sets are kept (in
+# METRES -- venuslab/venusdata.py keeps the same values in km) and the right one
+# is chosen per input file by its level count, mirroring venusdata.py.
 
-heights = np.array([9.45306290e-03, 4.83510271e-02, 1.53046221e-01, 3.73352647e-01,
+heights50 = np.array([9.4504710e-03, 4.8338074e-02, 1.5300426e-01, 3.7324557e-01,
+       7.5411582e-01, 1.3392169e+00, 2.1695750e+00, 3.2827427e+00,
+       4.7116103e+00, 6.4832373e+00, 8.6177559e+00, 1.1128335e+01,
+       1.4020479e+01, 1.7288918e+01, 2.0912828e+01, 2.4761955e+01,
+       2.8558361e+01, 3.2130924e+01, 3.5487930e+01, 3.8643879e+01,
+       4.1625511e+01, 4.4466003e+01, 4.7189983e+01, 4.9781677e+01,
+       5.2210793e+01, 5.4474300e+01, 5.6580246e+01, 5.8551716e+01,
+       6.0436192e+01, 6.2270138e+01, 6.4059181e+01, 6.5802261e+01,
+       6.7509895e+01, 6.9198883e+01, 7.0857117e+01, 7.2468269e+01,
+       7.4031113e+01, 7.5544807e+01, 7.7022598e+01, 7.8483002e+01,
+       7.9931213e+01, 8.1360779e+01, 8.2763893e+01, 8.4131378e+01,
+       8.5458458e+01, 8.6925591e+01, 8.8879539e+01, 9.1365417e+01,
+       9.4282623e+01, 9.7128662e+01])*1e3
+# Heights of 50-level Venus model output in m
+
+heights78 = np.array([9.45306290e-03, 4.83510271e-02, 1.53046221e-01, 3.73352647e-01,
        7.54337728e-01, 1.33960199e+00, 2.17016840e+00, 3.28359985e+00,
        4.71279430e+00, 6.48478937e+00, 8.61961460e+00, 1.11300869e+01,
        1.40210838e+01, 1.72868519e+01, 2.09060841e+01, 2.47483273e+01,
@@ -70,7 +83,21 @@ heights = np.array([9.45306290e-03, 4.83510271e-02, 1.53046221e-01, 3.73352647e-
        1.30924683e+02, 1.32434402e+02, 1.33977646e+02, 1.35579971e+02,
        1.37256210e+02, 1.39007202e+02, 1.40822159e+02, 1.42683762e+02,
        1.44574203e+02, 1.46479889e+02])*1e3
-# Heights of Venus model output in m
+# Heights of 78-level Venus model output in m
+
+LEVEL_HEIGHTS = {50: heights50, 78: heights78}
+
+def heights_for(n_levels):
+    """ Return the model level heights [m] for a VPCM run with n_levels
+        vertical levels. Raises rather than guessing for an unknown grid. """
+    try:
+        return LEVEL_HEIGHTS[n_levels]
+    except KeyError:
+        raise ValueError(
+            f"Input file has {n_levels} vertical levels; known VPCM grids: "
+            f"{sorted(LEVEL_HEIGHTS)}. Add its level heights to LEVEL_HEIGHTS "
+            "in create_nc_venus.py."
+        ) from None
 
 # Scalar (non-wind) fields to carry through to the Parcels input file, mapping
 # the output name Parcels will see to the VPCM source variable name and units.
@@ -247,6 +274,10 @@ def run_preprocess(inputfile, savedir, testname):
         Output files preprocessed to be compatible with Parcels     """
     
     lons, lats, times, t_interval = extract_metadata(inputfile)
+
+    # Pick the 50- or 78-level height array to match this file's vertical grid
+    # (mirrors venuslab/venusdata.py, which keys off the presnivs length).
+    heights = heights_for(inputfile['vitu'].shape[1])
 
     ucube, vcube, wcube, scalar_cubes, selected_times, selected_heights = selector(inputfile, times, heights, trange=t_select, hrange=h_select)
 
