@@ -73,6 +73,7 @@ def main():
     cell_areas = parcels.Field(
         name="cell_areas", data=fieldset.U.cell_areas(), lon=x, lat=y)
     fieldset.add_field(cell_areas)
+  
     fieldset.add_constant("Cs", 0.1)
 
     # Convective vertical-wind (OU/AR(1)) parameters, Vega-1 calibration.
@@ -121,8 +122,8 @@ def main():
                   name=savedir + config.OUTPUT_NAME,
                   outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
     )
-
-    pset_clouds.execute([AdvectionRK4, smagdiff, balloon_vertical, periodicBC, boundary_stick],
+    #pset_clouds.execute([AdvectionRK4, balloon_vertical, smagdiff, periodicBC, boundary_stick], 
+    pset_clouds.execute([balloon_vertical],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
