@@ -79,6 +79,19 @@ def main():
     fieldset.add_constant("conv_z_hi", 55000.0)  # convective layer top [m]
     fieldset.add_constant("conv_edge", 2000.0)   # taper half-width at each edge [m]
 
+    # Sanity check: seed depths must lie inside the file's vertical axis.
+    # Catches unit mistakes (e.g. a Height axis accidentally written in km)
+    # up front, instead of as cryptic out-of-bounds errors mid-run.
+    depth_axis = fieldset.U.grid.depth
+    for d in config.PARTICLE_DEPTH:
+        if not depth_axis.min() <= d <= depth_axis.max():
+            raise ValueError(
+                f"Particle seed depth {d} m is outside the input file's height axis "
+                f"[{depth_axis.min():g}, {depth_axis.max():g}] m. Check PARTICLE_DEPTH "
+                "in config.py and the Height axis units in the input files "
+                "(Parcels expects metres)."
+            )
+
     # Create particle set (initial positions come from config.py)
     pset_clouds = ParticleSet.from_list(
         fieldset=fieldset,
