@@ -4,7 +4,7 @@ import xarray as xr
 import os, re
 from datetime import timedelta
 import parcels
-from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4_3D
+from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4
 import custom_kernels
 import config  # per-run settings; copy config_example.py -> config.py
 import importlib
@@ -43,11 +43,15 @@ def main():
     # Set up Parcels inputs
     filenames = {'U': paths,
                  'V': paths,
-                 'W': paths}
+                 'W': paths,
+                 'RHO': paths
+                }
 
     variables = {'U': 'U',
                  'V': 'V',
-                 'W': 'W'}
+                 'W': 'W',
+                 'RHO': 'RHO'
+                }
 
     dimensions = {'time': 'Time',
                   'depth': 'Height',
@@ -102,13 +106,13 @@ def main():
     fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     # Vehicle masses:
     fieldset.add_constant("m_total", 62) # Total mass: Helium + envelopes + payload [kg]
-    fieldset.add_constant("m_gas_ZP", 54.76) # Mass of helium in the ZP balloon [kg]
+    fieldset.add_constant("m_gas_ZP", 5.68) # Mass of helium in the ZP balloon [kg]
     #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
 
     # Create particle set (initial positions come from config.py)
     pset_clouds = ParticleSet.from_list(
         fieldset=fieldset,
-        pclass=VenusParticle,
+        pclass=BalloonParticle,
         lon=config.PARTICLE_LON,
         lat=config.PARTICLE_LAT,
         depth=config.PARTICLE_DEPTH,)
@@ -118,7 +122,7 @@ def main():
                   outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
     )
 
-    pset_clouds.execute([AdvectionRK4_3D, smagdiff, convection_ou, periodicBC, boundary_stick],
+    pset_clouds.execute([AdvectionRK4, balloon_vertical, smagdiff, periodicBC, boundary_stick],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
