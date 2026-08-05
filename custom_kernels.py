@@ -19,7 +19,7 @@ class VenusParticle(JITParticle):
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
-class BalloonParticle(ScipyParticle):
+class BalloonParticle(JITParticle):
     """ Custom particle class for Aerobot simulations.
 
     Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
@@ -129,30 +129,27 @@ def surface_bounce(particle, fieldset, time):
 
 # %%
 def balloon_vertical(particle, fieldset, time):
-    import numpy as np
     """ write a detailed description here like in example kernels"""
     displacement, i = 0.0, 0.0
     dt_inner = particle.dt / 30 # Sub-timesteps [s]
     rho_atm = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
     w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
 
-    # Compute displaced volume:
+    # Compute displaced volume & virtual mass:
     Vol = 10.86 * fieldset.m_gas_ZP / rho_atm # Displaced volume [m^3]
     if Vol > fieldset.V_infl:
         Vol = fieldset.V_infl # Caps volume at maximum inflation 
-
-    # Compute outer-loop variables:
-    m_virtual = fieldset.C_m * rho_atm * Vol # The apparent extra mass when a body accelerates through fluid [kg]
-    w_eq = math.sqrt(math.fabs(2*(rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus)/(rho_atm*fieldset.C_D_top*fieldset.A_top))) # [m/s]
+    m_virtual = fieldset.C_m * rho_atm * Vol # Apparent extra mass [kg]
 
     # Progress vertical velocity and compute particle displacement at each sub-step:
     while i < 30: 
         i += 1
         w_rel = particle.w_bal - w_atm # Relative velocity [m/s]
-        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel)) # Vertical drag relaxation [s]
+        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_side * fieldset.A_side * math.fabs(w_rel)) # Vertical drag relaxation [s]
         F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel * math.fabs(w_rel) # Buoyancy force [N]
         F_net = rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force from Eq. (1)
-        particle.w_bal = w_eq + (particle.w_bal - w_eq)*math.exp(-np.negative(dt_inner) / tau_vertical) # Update vertical velocity
+        w_eq = (F_net/(m_virtual + fieldset.m_total))*tau_vertical
+        particle.w_bal = w_eq + (particle.w_bal - w_eq)*math.exp((dt_inner*-1) / tau_vertical) # Update vertical velocity
         displacement += particle.w_bal*dt_inner 
     # Update particle altitude:
     particle_ddepth += displacement
