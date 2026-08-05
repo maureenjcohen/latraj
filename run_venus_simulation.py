@@ -107,7 +107,7 @@ def main():
     fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     # Vehicle masses:
     fieldset.add_constant("m_total", 62) # Total mass: Helium + envelopes + payload [kg]
-    fieldset.add_constant("m_gas_ZP", 5.68) # Mass of helium in the ZP balloon [kg]
+    fieldset.add_constant("m_gas_ZP", 6.68) # Mass of helium in the ZP balloon [kg]
     #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
 
     # Create particle set (initial positions come from config.py)
@@ -122,8 +122,8 @@ def main():
                   name=savedir + config.OUTPUT_NAME,
                   outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
     )
-    #pset_clouds.execute([AdvectionRK4, balloon_vertical, smagdiff, periodicBC, boundary_stick], 
-    pset_clouds.execute([balloon_vertical],
+    pset_clouds.execute([AdvectionRK4, balloon_vertical, smagdiff, periodicBC, boundary_stick], 
+    #pset_clouds.execute([balloon_vertical],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
