@@ -27,6 +27,7 @@ class BalloonParticle(JITParticle):
     """
     w_bal = Variable('w_bal', dtype=np.float32, initial=0.0, to_write=True)
     v_bal = Variable('v_bal', dtype=np.float32, initial=0.0, to_write=True)
+    u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
@@ -135,6 +136,23 @@ def balloon_vertical(particle, fieldset, time):
     rho_atm = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
     w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
 
+    # Restructure convection_ou to add directly to w_atm:
+    z = particle.depth
+    env = 0.0
+    if z > fieldset.conv_z_lo - fieldset.conv_edge and z < fieldset.conv_z_hi + fieldset.conv_edge:
+        if z < fieldset.conv_z_lo:
+            env = (z - (fieldset.conv_z_lo - fieldset.conv_edge)) / fieldset.conv_edge
+        elif z > fieldset.conv_z_hi:
+            env = ((fieldset.conv_z_hi + fieldset.conv_edge) - z) / fieldset.conv_edge
+        else:
+            env = 1.0
+
+    if env > 0.0:
+        a = math.exp(-math.fabs(particle.dt) / fieldset.conv_tau)
+        g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
+        particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
+        w_atm += fieldset.conv_sigma * env * particle.u_conv 
+    
     # Compute displaced volume & virtual mass:
     Vol = 10.86 * fieldset.m_gas_ZP / rho_atm # Displaced volume [m^3]
     if Vol > fieldset.V_infl:
@@ -143,7 +161,6 @@ def balloon_vertical(particle, fieldset, time):
     m_est = rho_atm*fieldset.V_infl
     #print(f"Volume: {Vol}, Altitude: {particle.depth}, Estimated mass: {m_est}")
 
-    # Progress vertical velocity and compute particle displacement at each sub-step:
     while i < 30: 
         i += 1
         # Compute forces:
@@ -157,7 +174,7 @@ def balloon_vertical(particle, fieldset, time):
         w_eq = a_buoy * tau_vertical # Equilibrium velocity [m/s]
         w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
         particle.w_bal = w_rel + w_atm # Update vertical velocity [m/s]
-        displacement += particle.w_bal*dt_inner # Update displacement
+        displacement += particle.w_bal*dt_inner # Update displacement [m]
         #w_term = math.sqrt(math.fabs((2*(rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus))/(rho_atm * fieldset.C_D_top * fieldset.A_top) ))
         #print(w_term)
     # Update particle altitude:
