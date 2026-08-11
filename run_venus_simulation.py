@@ -107,7 +107,7 @@ def main():
     fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     # Vehicle masses:
     fieldset.add_constant("m_total", 62) # Total mass: Helium + envelopes + payload [kg]
-    fieldset.add_constant("m_gas_ZP", 5.88) # Mass of helium in the ZP balloon [kg]
+    fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
     #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
 
     # Create particle set (initial positions come from config.py)
