@@ -20,7 +20,7 @@ class VenusParticle(JITParticle):
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
-class BalloonParticle(JITParticle):
+class BalloonParticle(ScipyParticle):
     """ Custom particle class for Aerobot simulations.
 
     Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
@@ -163,25 +163,26 @@ def balloon_vertical(particle, fieldset, time):
     while i < 30:
         i += 1
         # Compute displaced volume & virtual mass:
-        Vol = 10.86 * fieldset.m_gas_ZP / rho_atm # Displaced volume [m^3] uses Vol instead of V because of JITParticle errors
+        rho_new = math.fabs(slope*particle.depth)
+        print(particle.depth)
+        Vol = 10.86 * fieldset.m_gas_ZP / rho_new # Displaced volume [m^3] uses Vol instead of V because of JITParticle errors
         if Vol > fieldset.V_infl:
             Vol = fieldset.V_infl # Caps volume at maximum inflation 
-        m_virtual = fieldset.C_m * rho_atm * Vol # Apparent extra mass [kg]
+        m_virtual = fieldset.C_m * rho_new * Vol # Apparent extra mass [kg]
         
         w_rel_old = particle.w_bal - w_atm
-        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel_old)) # Drag relaxation [s]
-        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel_old * math.fabs(w_rel_old) # Drag force [N]
-        F_net = rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force from Eq. (1) [N]
+        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_new * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel_old)) # Drag relaxation [s]
+        F_drag = 0.5 * rho_new * fieldset.C_D_top * fieldset.A_top * w_rel_old * math.fabs(w_rel_old) # Drag force [N]
+        F_net = rho_new*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force from Eq. (1) [N]
         
         # Update vertical velocities and compute displacement:
-        a_buoy = (rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]
+        a_buoy = (rho_new*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]
         w_eq = a_buoy * tau_vertical # Equilibrium velocity [m/s]
         w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
         
         particle.w_bal = w_rel + w_atm # Update vertical velocity [m/s]
         displacement += particle.w_bal*dt_inner # Update displacement [m]  
         particle_ddepth += displacement # Add displacement to particle position 
-        rho_atm = math.fabs(slope*particle.depth)
         #print(rho_atm)
         #w_term = math.sqrt(math.fabs((2*(rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus))/(rho_atm * fieldset.C_D_top * fieldset.A_top) ))
         #print(w_term)
