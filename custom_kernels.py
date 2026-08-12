@@ -18,6 +18,7 @@ class VenusParticle(JITParticle):
     """
     u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
+<<<<<<< HEAD
 
 # %%
 class BalloonParticle(ScipyParticle):
@@ -30,6 +31,8 @@ class BalloonParticle(ScipyParticle):
     v_bal = Variable('v_bal', dtype=np.float32, initial=0.0, to_write=True)
     u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
+=======
+>>>>>>> 1f46667cc1671fc9ab8b1548158085d31eec1329
 
 # %%
 def CheckOutOfBounds(particle, fieldset, time):

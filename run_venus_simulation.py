@@ -109,6 +109,19 @@ def main():
     fieldset.add_constant("m_total", 62) # Total mass: Helium + envelopes + payload [kg]
     fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
     #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
+    
+    # Sanity check: seed depths must lie inside the file's vertical axis.
+    # Catches unit mistakes (e.g. a Height axis accidentally written in km)
+    # up front, instead of as cryptic out-of-bounds errors mid-run.
+    depth_axis = fieldset.U.grid.depth
+    for d in config.PARTICLE_DEPTH:
+        if not depth_axis.min() <= d <= depth_axis.max():
+            raise ValueError(
+                f"Particle seed depth {d} m is outside the input file's height axis "
+                f"[{depth_axis.min():g}, {depth_axis.max():g}] m. Check PARTICLE_DEPTH "
+                "in config.py and the Height axis units in the input files "
+                "(Parcels expects metres)."
+            )
 
     # Create particle set (initial positions come from config.py)
     pset_clouds = ParticleSet.from_list(
