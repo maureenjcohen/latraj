@@ -86,29 +86,29 @@ def main():
 
     # Aerobot parameters
     # Drag and virtual mass coefficients:
-    fieldset.add_constant("C_D_top", 0.8) # drag coefficient for vertical motion
-    fieldset.add_constant("C_D_side", 1.0) # drag coefficient for horizontal motion
-    fieldset.add_constant("C_m", 0.2) # virtual mass coefficient
+    fieldset.add_constant("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_constant("C_D_side", 1.0) # Drag coefficient for horizontal motion
+    fieldset.add_constant("C_m", 0.2) # Virtual mass coefficient
     # Balloon geometry:
-    fieldset.add_constant("R_u", 2.5) # ZP balloon upper sphere radius [m]
-    fieldset.add_constant("R_l", 1.25) # ZP balloon lower sphere radius [m]
-    fieldset.add_constant("R", 1.25) # SP balloon radius [m]
+    fieldset.add_constant("R_u", 2.5) # ZP balloon upper sphere radius [m] # tbr
+    fieldset.add_constant("R_l", 1.25) # ZP balloon lower sphere radius [m] # tbr
+    fieldset.add_constant("R", 1.25) # SP balloon radius [m] # tbr
     # Projected areas at full inflation:
     fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
-    fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
+    fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2] 
     fieldset.add_constant("V_infl", 72.6) # Enclosed volume of the profile [m^3]
     # Masses:
-    fieldset.add_constant("M_He", 4.0026) # Molar mass of helium [g/mol]
-    fieldset.add_constant("M_Venus_atm", 43.45) # Molar mass of Venus' atmosphere [g/mol]
+    fieldset.add_constant("M_He", 4.0026) # Molar mass of helium [g/mol] # tbr
+    fieldset.add_constant("M_Venus_atm", 43.45) # Molar mass of Venus' atmosphere [g/mol] # tbr
     # Gas constants:
-    fieldset.add_constant("R_universal", 8.3145) # Universal gas constant [J/mol K]
-    fieldset.add_constant("R_He", 2077.1) # Helium gas constant [J/kg K]
-    fieldset.add_constant("R_atm", 191.4) # Venus atmospheric gas constant [J/kg K]
+    fieldset.add_constant("R_universal", 8.3145) # Universal gas constant [J/mol K] # tbr
+    fieldset.add_constant("R_He", 2077.1) # Helium gas constant [J/kg K] # tbr
+    fieldset.add_constant("R_atm", 191.4) # Venus atmospheric gas constant [J/kg K] # tbr
     fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     # Vehicle masses:
-    fieldset.add_constant("m_total", 62) # Total mass: Helium + envelopes + payload [kg]
+    fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
     fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
-    #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
+    #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later, if at all
     
     # Sanity check: seed depths must lie inside the file's vertical axis.
     # Catches unit mistakes (e.g. a Height axis accidentally written in km)
@@ -136,7 +136,6 @@ def main():
                   outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
     )
     pset_clouds.execute([AdvectionRK4, balloon_vertical, smagdiff, periodicBC, boundary_stick], 
-    #pset_clouds.execute([balloon_vertical],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,

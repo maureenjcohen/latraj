@@ -5,7 +5,6 @@ from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, StatusCod
 from datetime import timedelta
 import math
 import numpy as np
-from mpmath import mpf
 
 # %%
 class VenusParticle(JITParticle):
@@ -21,10 +20,12 @@ class VenusParticle(JITParticle):
 
 # %%
 class BalloonParticle(JITParticle):
-    """ Custom particle class for Aerobot simulations.
+    """ Custom particle class for Venus Aerobot simulations.
 
     Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
-    and v_bal, the current balloon volume (m^3), starting at ....
+    v_bal, the current balloon volume (m^3), starting at 0; and u_conv, the
+    dimensionless Ornstein-Uhlenbeck red-noise state mentioned in the
+    VenusParticle kernel, starting at 0.
     """
     w_bal = Variable('w_bal', dtype=np.float32, initial=0.0, to_write=True)
     v_bal = Variable('v_bal', dtype=np.float32, initial=0.0, to_write=True)
@@ -133,10 +134,11 @@ def surface_bounce(particle, fieldset, time):
 def balloon_vertical(particle, fieldset, time):
     """ write a detailed description here like in example kernels"""
     displacement, i = 0.0, 0.0
-    dt_inner = particle.dt / 30
-    rho_atm = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
+    dt_inner = particle.dt / 60
+    rho0 = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
     w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
-
+    rho_atm = rho0
+    
     # Compute density gradient:
     rho1 = fieldset.RHO[time, particle.depth + 200, particle.lat, particle.lon] 
     rho2 = fieldset.RHO[time, particle.depth - 200, particle.lat, particle.lon]     
@@ -162,28 +164,29 @@ def balloon_vertical(particle, fieldset, time):
         w_atm += fieldset.conv_sigma * env * particle.u_conv 
 
     # Inner sub-step loop:
-    while i < 30:
+    while i < 60:
         i += 1
         # Compute volume & virtual mass:
         Vol = 10.86 * fieldset.m_gas_ZP / rho_atm # Displaced volume [m^3] 
-        if Vol > fieldset.V_infl: # uses Vol instead of V because of JITParticle errors
+        if Vol > fieldset.V_infl: # named Vol instead of V because of JITParticle errors
             Vol = fieldset.V_infl # Caps volume at maximum inflation 
-        m_virtual = fieldset.C_m * rho_atm * Vol # Apparent extra mass [kg]
+        m_virtual = fieldset.C_m * rho_atm * Vol # Apparent extra mass [kg] from Eq. (13)
 
         # Compute forces:
         w_rel_old = particle.w_bal - w_atm # Relative velocity [m/s]
         tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel_old)) # Drag relaxation [s]
-        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel_old * math.fabs(w_rel_old) # Drag force [N]
-        F_net = rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force from Eq. (1) [N]
+        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel_old * math.fabs(w_rel_old) # Drag force [N] from Eq. (11)
+        F_net = rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force [N] from Eq. (1)
         
         # Update relative velocity:
         a_buoy = (rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]
         w_eq = a_buoy * tau_vertical # Equilibrium velocity [m/s]
         w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
 
-        # Update vertical velocity, displacement and density:
-        particle.w_bal = w_rel + w_atm 
-        displacement += particle.w_bal*dt_inner   
-        particle_ddepth += displacement 
-        rho_atm = math.fabs(slope*particle.depth) # does this need an offset: y=mx + c?
-        #w_term = math.sqrt(math.fabs((2*(rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus))/(rho_atm * fieldset.C_D_top * fieldset.A_top) ))  
+        # Update vertical velocity, displacement and atmospheric density:
+        particle.w_bal = w_rel + w_atm # Vertical velocity [m/s]
+        displacement += particle.w_bal*dt_inner # Displacement [m]
+        rho_atm = rho0 + slope*displacement # Extrapolate atmospheric density [kg/m^3]
+        
+    # Update altitude position:
+    particle_ddepth += displacement # Altitude position [m]
