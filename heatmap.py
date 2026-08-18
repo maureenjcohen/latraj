@@ -78,7 +78,7 @@ def double_heatmap(ds):
         lon_raw,
         z_raw,
         bins=[360, 150],
-        range=[[-180, 180], [0, 80]], # Hash out as needed to "zoom in"
+        #range=[[-180, 180], [0, 80]], # Hash out as needed to "zoom in"
         density=False
     )
         
@@ -93,7 +93,7 @@ def double_heatmap(ds):
     plt.subplot(1, 2, 1)
     plt.imshow(
         heatmap_latmatrix.T,
-        cmap = 'viridis',
+        cmap = 'gist_heat_r',
         aspect = "auto",
         interpolation = 'none',
         origin = 'lower',
@@ -106,7 +106,7 @@ def double_heatmap(ds):
     plt.subplot(1, 2, 2)
     plt.imshow(
         heatmap_zmatrix.T,
-        cmap = 'viridis',
+        cmap = 'gist_heat_r',
         aspect="auto",
         interpolation = 'none',
         origin = 'lower',
@@ -118,4 +118,5 @@ def double_heatmap(ds):
 
     # 5. Add heatmap title and show plots
     fig.suptitle('Potential trajectories through the Venus cloud decks')
+    plt.savefig('heatmap.png')
     plt.show()

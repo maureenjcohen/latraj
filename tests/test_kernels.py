@@ -2,7 +2,7 @@ import custom_kernels, parcels
 import pytest
 import numpy as np
 import xarray as xr
-from custom_kernels import convection_ou, VenusParticle
+from custom_kernels import convection_ou, VenusParticle, BalloonParticle, balloon_vertical
 from parcels import FieldSet, ParticleSet, ScipyParticle, Variable
 
 @pytest.fixture
@@ -25,9 +25,41 @@ def convection_fieldset():
     # Convection parameters
     return fieldset
 
+@pytest.fixture
+def balloon_fieldset():
+    """ Toy fieldset for test sims with balloon kernel """
+    lon = np.arange(0, 360, dtype=np.float32)
+    lat = np.arange(-90, 90, dtype=np.float32)
+    alt = np.arange(0, 70000, 2000, dtype=np.float32)
+    U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
+    V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
+    W = balloon_vertical.w_atm
+    RHO = np.full((alt.size, lat.size, lon.size), 2.0)
+    # 3-D wind field with all winds 0 m/s
+    fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
+                                {"lon": lon, "lat": lat, "depth": alt})
+    fieldset.add_constant("conv_sigma", 0.6)
+    fieldset.add_constant("conv_tau", 1200.0)
+    fieldset.add_constant("conv_z_lo", 48000.0)
+    fieldset.add_constant("conv_z_hi", 55000.0)
+    fieldset.add_constant("conv_edge", 2000.0)
+    # Convection parameters
+    fieldset.add_constant("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_constant("C_D_side", 1.0) # Drag coefficient for horizontal motion
+    fieldset.add_constant("C_m", 0.2) # Virtual mass coefficient
+    fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
+    fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
+    fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
+    fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
+    fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
+    fieldset.add_constant("V_infl", 72.6)
+    # Balloon parameters
+    return fieldset
+
 def test_kernels_importable():
     assert callable(custom_kernels.smagdiff)
     assert callable(custom_kernels.convection_ou)
+    assert callable(custom_kernels.balloon_vertical)
 
 @pytest.mark.parametrize("z", [35000, 60000, 0])
 def test_no_convection_outside_envelope(convection_fieldset, z):
@@ -56,4 +88,18 @@ def test_conv_distribution_stationary(convection_fieldset):
     u_conv = np.asarray(pset.u_conv) # Final u_conv values for all particles
     assert np.mean(u_conv) == pytest.approx(0.0, abs=0.05)
     assert np.var(u_conv) == pytest.approx(1.0, abs=0.1)
+
+def test_balloon_tracks_watm(balloon_fieldset):
+    """ Tests that the balloon kernel tracks W_atm and does 
+        not double-count the vertical wind """
+    n_particles = 5000
+    tau = 1200.0
+    m_gas_ZP = balloon_fieldset.m_total / 10.86
+    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle,
+                       lon=np.full(n_particles, 90),
+                       lat=np.full(n_particles, 0),
+                       depth=np.full(n_particles, 49000))
+
+    pset.execute(balloon_vertical, runtime=10*tau, dt=600)
+    assert pset.w_bal == pytest.approx(pset.w_atm)
 

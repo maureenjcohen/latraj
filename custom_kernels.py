@@ -187,6 +187,7 @@ def balloon_vertical(particle, fieldset, time):
         particle.w_bal = w_rel + w_atm # Vertical velocity [m/s]
         displacement += particle.w_bal*dt_inner # Displacement [m]
         rho_atm = rho0 + slope*displacement # Extrapolate atmospheric density [kg/m^3]
+        particle.v_bal = Vol
         
     # Update altitude position:
     particle_ddepth += displacement # Altitude position [m]
