@@ -19,7 +19,7 @@ class VenusParticle(JITParticle):
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
-class BalloonParticle(JITParticle):
+class BalloonParticle(ScipyParticle):
     """ Custom particle class for Venus Aerobot simulations.
 
     Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
@@ -138,7 +138,7 @@ def balloon_vertical(particle, fieldset, time):
     rho0 = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
     w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
     rho_atm = rho0
-    
+    #fieldset.add_constant('m_gas_ZP', (fieldset.m_total / 10.86))
     # Compute density gradient:
     rho1 = fieldset.RHO[time, particle.depth + 200, particle.lat, particle.lon] 
     rho2 = fieldset.RHO[time, particle.depth - 200, particle.lat, particle.lon]     
@@ -191,3 +191,5 @@ def balloon_vertical(particle, fieldset, time):
         
     # Update altitude position:
     particle_ddepth += displacement # Altitude position [m]
+    #print('W_bal:', particle.w_bal)
+    #print('W_atm:', w_atm)

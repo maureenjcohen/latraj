@@ -108,6 +108,7 @@ def main():
     # Vehicle masses:
     fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
     fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
+    #fieldset.add_constant("m_gas_ZP", (fieldset.m_total/10.86))
     #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later, if at all
     
     # Sanity check: seed depths must lie inside the file's vertical axis.
