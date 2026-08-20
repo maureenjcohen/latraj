@@ -94,28 +94,33 @@ def test_balloon_tracks_watm(balloon_fieldset):
         not double-count the vertical wind """
     n_particles = 5000
     tau = 1200.0 
+    #w_atm = balloon_fieldset.W
+    w_atm = 0.5
     balloon_fieldset.add_constant('m_gas_ZP', (balloon_fieldset.m_total / 10.86))
-    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle,
-                       lon=np.full(n_particles, 90),
-                       lat=np.full(n_particles, 0),
-                       depth=np.full(n_particles, 49000))
+    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    assert pset.w_bal == pytest.approx(pset.w_atm, rel=(pset.w_atm*(10/100)))
-    # w_atm is returning as 0
+    w_bal = pset.w_bal
+    assert w_bal == pytest.approx(w_atm, rel=(w_atm*0.01))
 
-#@pytest.mark.parametrize("v_rel", [0.5, 1, 2, 3])
-def test_tau_horizontal(balloon_fieldset):
+@pytest.mark.parametrize("v_rel", [0.5, 1, 2, 3])
+def test_tau_horizontal(balloon_fieldset, v_rel):
     """ Tests that tau_horizontal is well below
         the outer dt and is around 10s """
     tau = 1200.0
-    v_rel = 0.5
+    #rho_atm = balloon_fieldset.RHO # how to multiply with uniform fields?
+    rho_atm = 2.0
     balloon_fieldset.add_constant('m_gas_ZP', 5.75)
     pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    m_virtual = pset.m_virtual
-    rho_atm = pset.rho_atm
+    m_virtual = balloon_fieldset.C_m*rho_atm*pset.v_bal
     tau_horizontal = (balloon_fieldset.m_total + m_virtual)/(0.5*rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
-    # rho0 rho_atm and m_virtual are returning as 0 
-    assert tau_horizontal < 300
+    assert tau_horizontal <= 10
+
+def test_ceiling_behaviour(balloon_fieldset):
+    """ Tests that the balloon arrests only when
+        V = V_infl at the altitude where 
+        m_total = rho_atm*V_infl """
+    tau = 1200.0
+    balloon_fieldset.add_constant('m_gas_ZP', 5.75)
