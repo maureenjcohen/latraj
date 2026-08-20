@@ -2,8 +2,8 @@ import custom_kernels, parcels
 import pytest
 import numpy as np
 import xarray as xr
-from custom_kernels import convection_ou, VenusParticle, BalloonParticle, balloon_vertical
-from parcels import FieldSet, ParticleSet, ScipyParticle, Variable, Field
+from custom_kernels import convection_ou, balloon_vertical, VenusParticle, BalloonParticle
+from parcels import FieldSet, ParticleSet, ScipyParticle, Variable
 
 @pytest.fixture
 def convection_fieldset():
@@ -34,7 +34,7 @@ def balloon_fieldset():
     U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
-    RHO = np.full((alt.size, lat.size, lon.size), 0.85, dtype=np.float32)
+    RHO = np.full((alt.size, lat.size, lon.size), 2.0, dtype=np.float32)
     # 3-D wind field with most winds 0 m/s
     fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
                                 {"lon": lon, "lat": lat, "depth": alt})
@@ -88,7 +88,7 @@ def test_conv_distribution_stationary(convection_fieldset):
     u_conv = np.asarray(pset.u_conv) # Final u_conv values for all particles
     assert np.mean(u_conv) == pytest.approx(0.0, abs=0.05)
     assert np.var(u_conv) == pytest.approx(1.0, abs=0.1)
-'''
+
 def test_balloon_tracks_watm(balloon_fieldset):
     """ Tests that the balloon kernel tracks W_atm and does 
         not double-count the vertical wind """
@@ -102,20 +102,20 @@ def test_balloon_tracks_watm(balloon_fieldset):
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
     assert pset.w_bal == pytest.approx(pset.w_atm, rel=(pset.w_atm*(10/100)))
-'''
+    # w_atm is returning as 0
+
 #@pytest.mark.parametrize("v_rel", [0.5, 1, 2, 3])
 def test_tau_horizontal(balloon_fieldset):
     """ Tests that tau_horizontal is well below
-        the outer dt """
-    n_particles = 5000
+        the outer dt and is around 10s """
     tau = 1200.0
     v_rel = 0.5
     balloon_fieldset.add_constant('m_gas_ZP', 5.75)
-    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle,
-                       lon=np.full(n_particles, 90),
-                       lat=np.full(n_particles, 0),
-                       depth=np.full(n_particles, 49000))
+    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    #tau_horizontal = (balloon_fieldset.m_total + pset.m_virtual)/(0.5*pset.rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
-    assert pset.rho0 == 0
+    m_virtual = pset.m_virtual
+    rho_atm = pset.rho_atm
+    tau_horizontal = (balloon_fieldset.m_total + m_virtual)/(0.5*rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
+    # rho0 rho_atm and m_virtual are returning as 0 
+    assert tau_horizontal < 300

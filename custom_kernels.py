@@ -191,5 +191,6 @@ def balloon_vertical(particle, fieldset, time):
         
     # Update altitude position:
     particle_ddepth += displacement # Altitude position [m]
+    #print(rho_atm)
     #print('W_bal:', particle.w_bal)
     #print('W_atm:', w_atm)
