@@ -132,7 +132,30 @@ def surface_bounce(particle, fieldset, time):
 
 # %%
 def balloon_vertical(particle, fieldset, time):
-    """ write a detailed description here like in example kernels"""
+    """ Balloon vertical-wind kernel: updates the balloon's vertical velocity 
+        and displacement using the equations for net force, drag and buoyancy
+        from the prototype Venus Aerobot paper by Izraelevitz et al:
+        
+            (m_total + m_virtual) * d2z/dt2 = rho_atm * V * g  -  m_total * g  -  F_drag (Eq. 1)
+            F_drag = 0.5 * rho_atm * C_D * A_ref * v^2 * v_hat (Eq. 11)
+            m_virtual = C_m * rho_atm * V (Eq. 13)
+
+        In the outer loop, rho_atm and w_atm are interpolated at the particle position,
+        and the Ohrnstein-Uhlenbeck process from convection_ou is used to directly advance
+        w_atm.
+
+        In the inner loop, the balloon's volume and virtual mass are calculated at each
+        substep along with the forces. The balloon's relative velocity is advanced
+        by a semi-exponential update similar to the OU process in convection_ou:
+
+            a_buoy = (rho*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual)
+            w_eq = a_buoy * tau_vertical 
+            w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical)
+        
+        Additionally, a local gradient is used to extrapolate rho_atm at each substep. 
+        Since convection_ou is restructured in this kernel, it should not be added to kernel list 
+        in run_venus_simulation.py.
+        """
     displacement, i = 0.0, 0.0
     dt_inner = particle.dt / 60
     rho0 = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]

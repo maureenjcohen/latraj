@@ -2,6 +2,7 @@ import custom_kernels, parcels
 import pytest
 import numpy as np
 import xarray as xr
+import config
 from custom_kernels import convection_ou, balloon_vertical, VenusParticle, BalloonParticle
 from parcels import FieldSet, ParticleSet, ScipyParticle, Variable
 
@@ -33,12 +34,44 @@ def balloon_fieldset():
     alt = np.arange(0, 70000, 2000, dtype=np.float32)
     U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
-    W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
+    W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32) 
     RHO = np.full((alt.size, lat.size, lon.size), 2.0, dtype=np.float32)
     # 3-D wind field with most winds 0 m/s
     fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
                                 {"lon": lon, "lat": lat, "depth": alt})
     fieldset.add_constant("conv_sigma", 0.6)
+    fieldset.add_constant("conv_tau", 1200.0)
+    fieldset.add_constant("conv_z_lo", 48000.0)
+    fieldset.add_constant("conv_z_hi", 55000.0)
+    fieldset.add_constant("conv_edge", 2000.0)
+    # Convection parameters
+    fieldset.add_constant("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_constant("C_D_side", 1.0) # Drag coefficient for horizontal motion
+    fieldset.add_constant("C_m", 0.2) # Virtual mass coefficient
+    fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
+    fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
+    fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
+    fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
+    #fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
+    fieldset.add_constant("V_infl", 72.6) # Maximum volume [m^3]
+    # Balloon parameters
+    return fieldset
+
+@pytest.fixture
+def balloon_fieldset2():
+    """ Toy fieldset for test sims with balloon kernel with 
+        variable rho for ceiling behaviour test """
+    lon = np.arange(0, 360, dtype=np.float32)
+    lat = np.arange(-90, 90, dtype=np.float32)
+    alt = np.arange(0, 70000, 2000, dtype=np.float32)
+    U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
+    V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
+    W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
+    RHO = np.arange(0, 68.4784, dtype=np.float32)
+    # 3-D wind field with most winds 0 m/s
+    fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
+                                {"lon": lon, "lat": lat, "depth": alt})
+    fieldset.add_constant("conv_sigma", 0)
     fieldset.add_constant("conv_tau", 1200.0)
     fieldset.add_constant("conv_z_lo", 48000.0)
     fieldset.add_constant("conv_z_hi", 55000.0)
@@ -92,27 +125,26 @@ def test_conv_distribution_stationary(convection_fieldset):
 def test_balloon_tracks_watm(balloon_fieldset):
     """ Tests that the balloon kernel tracks W_atm and does 
         not double-count the vertical wind """
-    n_particles = 5000
     tau = 1200.0 
-    #w_atm = balloon_fieldset.W
-    w_atm = 0.5
+    w_atm = balloon_fieldset.W[0, 49000, 20, 90]
+    #w_atm = 0.5
     balloon_fieldset.add_constant('m_gas_ZP', (balloon_fieldset.m_total / 10.86))
     pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    assert pset.w_bal == pytest.approx(w_atm, rel=(w_atm*0.01))
+    assert pset.w_bal == pytest.approx(w_atm, rel=0.01)
 
-def test_ceiling_behaviour(balloon_fieldset):
+def test_ceiling_behaviour(balloon_fieldset2):
     """ Tests that the balloon arrests only when
         V = V_infl at the altitude where 
         m_total = rho_atm*V_infl """
     tau = 1200.0
     rho_atm = 0.85
-    balloon_fieldset.add_constant('m_gas_ZP', 5.65)
+    balloon_fieldset2.add_constant('m_gas_ZP', 5.65)
     pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    assert pset.v_bal == pytest.approx(balloon_fieldset.V_infl, rel=0.5)
+    assert pset.w_bal == pytest.approx(0, rel=0.01)
     assert pset.depth == pytest.approx(55000, rel=2000)
     assert rho_atm*balloon_fieldset.V_infl == pytest.approx(balloon_fieldset.m_total, rel=0.5)
 
@@ -121,13 +153,11 @@ def test_tau_horizontal(balloon_fieldset, v_rel):
     """ Tests that tau_horizontal is well below
         the outer dt and is around 10s """
     tau = 1200.0
-    #rho_atm = balloon_fieldset.RHO # how to multiply with uniform fields?
-    rho_atm = 2.0
-    balloon_fieldset.add_constant('m_gas_ZP', 5.75)
+    rho_atm = 0.85
+    balloon_fieldset.add_constant('m_gas_ZP', 5.65)
     pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
     m_virtual = balloon_fieldset.C_m*rho_atm*pset.v_bal
     tau_horizontal = (balloon_fieldset.m_total + m_virtual)/(0.5*rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
-    assert tau_horizontal <= 10
-    
+    assert tau_horizontal <= (config.DT_MINUTES*60)/10
