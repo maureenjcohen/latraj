@@ -1,6 +1,7 @@
 import custom_kernels, parcels
 import pytest
 import numpy as np
+import math
 import xarray as xr
 import config
 from custom_kernels import convection_ou, balloon_vertical, VenusParticle, BalloonParticle
@@ -52,7 +53,6 @@ def balloon_fieldset():
     fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
     fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
-    #fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
     fieldset.add_constant("V_infl", 72.6) # Maximum volume [m^3]
     # Balloon parameters
     return fieldset
@@ -64,10 +64,12 @@ def balloon_fieldset2():
     lon = np.arange(0, 360, dtype=np.float32)
     lat = np.arange(-90, 90, dtype=np.float32)
     alt = np.arange(0, 70000, 2000, dtype=np.float32)
+    rho_decay = np.array([68.4787*math.exp(-i/15900) for i in alt])
+    rho_decay2 = np.reshape(rho_decay, (alt.size, 1, 1))
     U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
-    RHO = np.arange(0, 68.4784, dtype=np.float32)
+    RHO = np.tile(rho_decay2, (1, lat.size, lon.size))
     # 3-D wind field with most winds 0 m/s
     fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
                                 {"lon": lon, "lat": lat, "depth": alt})

@@ -142,10 +142,10 @@ def balloon_vertical(particle, fieldset, time):
 
         In the outer loop, rho_atm and w_atm are interpolated at the particle position,
         and the Ohrnstein-Uhlenbeck process from convection_ou is used to directly advance
-        w_atm.
+        w_atm, the vertical atmospheric wind.
 
         In the inner loop, the balloon's volume and virtual mass are calculated at each
-        substep along with the forces. The balloon's relative velocity is advanced
+        substep along with the forces on the balloon. The balloon's relative velocity is advanced
         by a semi-exponential update similar to the OU process in convection_ou:
 
             a_buoy = (rho*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual)
@@ -154,7 +154,7 @@ def balloon_vertical(particle, fieldset, time):
         
         Additionally, a local gradient is used to extrapolate rho_atm at each substep. 
         Since convection_ou is restructured in this kernel, it should not be added to kernel list 
-        in run_venus_simulation.py.
+        in run_venus_simulation.py when using BalloonParticle.
         """
     displacement, i = 0.0, 0.0
     dt_inner = particle.dt / 60
@@ -207,10 +207,10 @@ def balloon_vertical(particle, fieldset, time):
         w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
 
         # Update vertical velocity, displacement and atmospheric density:
-        particle.w_bal = w_rel + w_atm # Vertical velocity [m/s]
-        displacement += particle.w_bal*dt_inner # Displacement [m]
-        rho_atm = rho0 + slope*displacement # Extrapolate atmospheric density [kg/m^3]
-        particle.v_bal = Vol
+        particle.w_bal = w_rel + w_atm # Balloon's vertical velocity [m/s]
+        displacement += particle.w_bal*dt_inner # Accumulates displacement [m]
+        rho_atm = rho0 + slope*displacement # Extrapolates atmospheric density [kg/m^3]
+        particle.v_bal = Vol # Tracks changes in volume
         
-    # Update altitude position:
-    particle_ddepth += displacement # Altitude position [m]
+    # Update altitude position [m]:
+    particle_ddepth += displacement 
