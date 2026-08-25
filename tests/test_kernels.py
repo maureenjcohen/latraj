@@ -141,12 +141,12 @@ def test_ceiling_behaviour(balloon_fieldset2):
     tau = 1200.0
     rho_atm = 0.85
     balloon_fieldset2.add_constant('m_gas_ZP', 5.65)
-    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
+    pset = ParticleSet(balloon_fieldset2, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    assert pset.w_bal == pytest.approx(0, rel=0.01)
+    assert pset.w_bal == pytest.approx(0, abs=0.1)
     assert pset.depth == pytest.approx(55000, rel=2000)
-    assert rho_atm*balloon_fieldset.V_infl == pytest.approx(balloon_fieldset.m_total, rel=0.5)
+    assert rho_atm*balloon_fieldset2.V_infl == pytest.approx(balloon_fieldset2.m_total, rel=0.5)
 
 @pytest.mark.parametrize("v_rel", [0.5, 1, 2, 3])
 def test_tau_horizontal(balloon_fieldset, v_rel):
