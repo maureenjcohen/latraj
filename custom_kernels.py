@@ -18,6 +18,20 @@ class VenusParticle(JITParticle):
     stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
 
 # %%
+class BalloonParticle(JITParticle):
+    """ Custom particle class for Venus Aerobot simulations.
+
+    Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
+    v_bal, the current balloon volume (m^3), starting at 0; and u_conv, the
+    dimensionless Ornstein-Uhlenbeck red-noise state mentioned in the
+    VenusParticle kernel, starting at 0.
+    """
+    w_bal = Variable('w_bal', dtype=np.float32, initial=0.0, to_write=True)
+    v_bal = Variable('v_bal', dtype=np.float32, initial=0.0, to_write=True)
+    u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
+    stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
+
+# %%
 def CheckOutOfBounds(particle, fieldset, time):
     if particle.state == StatusCode.ErrorOutOfBounds:
         particle.delete()
@@ -108,8 +122,92 @@ def convection_ou(particle, fieldset, time):
         g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
         particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
         particle_ddepth += fieldset.conv_sigma * env * particle.u_conv * particle.dt
+        
 # %%
 def surface_bounce(particle, fieldset, time):
      if particle.state == StatusCode.ErrorThroughSurface:
           particle_ddepth = 0.0
           particle.state = StatusCode.Success
+
+# %%
+def balloon_vertical(particle, fieldset, time):
+    """ Balloon vertical-wind kernel: updates the balloon's vertical velocity 
+        and displacement using the equations for net force, drag and buoyancy
+        from the prototype Venus Aerobot paper by Izraelevitz et al:
+        
+            (m_total + m_virtual) * d2z/dt2 = rho_atm * V * g  -  m_total * g  -  F_drag (Eq. 1)
+            F_drag = 0.5 * rho_atm * C_D * A_ref * v^2 * v_hat (Eq. 11)
+            m_virtual = C_m * rho_atm * V (Eq. 13)
+
+        In the outer loop, rho_atm and w_atm are interpolated at the particle position,
+        and the Ohrnstein-Uhlenbeck process from convection_ou is used to directly advance
+        w_atm, the vertical atmospheric wind.
+
+        In the inner loop, the balloon's volume and virtual mass are calculated at each
+        substep along with the forces on the balloon. The balloon's relative velocity is advanced
+        by a semi-exponential update similar to the OU process in convection_ou:
+
+            a_buoy = (rho*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual)
+            w_eq = a_buoy * tau_vertical 
+            w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical)
+        
+        Additionally, a local gradient is used to extrapolate rho_atm at each substep. 
+        Since convection_ou is restructured in this kernel, it should not be added to kernel list 
+        in run_venus_simulation.py when using BalloonParticle.
+        """
+    displacement, i = 0.0, 0.0
+    dt_inner = particle.dt / 60
+    rho0 = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
+    w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
+    rho_atm = rho0
+    
+    # Compute density gradient:
+    rho1 = fieldset.RHO[time, particle.depth + 200, particle.lat, particle.lon] 
+    rho2 = fieldset.RHO[time, particle.depth - 200, particle.lat, particle.lon]     
+    z1 = particle.depth + 200 
+    z2 = particle.depth - 200
+    slope = (rho1 - rho2)/(z1 - z2) # d_rho/dz
+
+    # Restructure convection_ou to add directly to w_atm:
+    z = particle.depth 
+    env = 0.0
+    if z > fieldset.conv_z_lo - fieldset.conv_edge and z < fieldset.conv_z_hi + fieldset.conv_edge:
+        if z < fieldset.conv_z_lo:
+            env = (z - (fieldset.conv_z_lo - fieldset.conv_edge)) / fieldset.conv_edge
+        elif z > fieldset.conv_z_hi:
+            env = ((fieldset.conv_z_hi + fieldset.conv_edge) - z) / fieldset.conv_edge
+        else:
+            env = 1.0
+
+    if env > 0.0:
+        a = math.exp(-math.fabs(particle.dt) / fieldset.conv_tau)
+        g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
+        particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
+        w_atm += fieldset.conv_sigma * env * particle.u_conv 
+
+    # Inner sub-step loop:
+    while i < 60:
+        i += 1
+        # Compute volume & virtual mass:
+        Vol = 10.86 * fieldset.m_gas_ZP / rho_atm # Displaced volume [m^3] 
+        if Vol > fieldset.V_infl: # named Vol instead of V because of JITParticle errors
+            Vol = fieldset.V_infl # Caps volume at maximum inflation 
+        m_virtual = fieldset.C_m * rho_atm * Vol # Apparent extra mass [kg] from Eq. (13)
+
+        # Compute forces:
+        w_rel_old = particle.w_bal - w_atm # Relative velocity [m/s]
+        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel_old)) # Drag relaxation [s]
+        
+        # Update relative velocity:
+        a_buoy = (rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]
+        w_eq = a_buoy * tau_vertical # Equilibrium velocity [m/s]
+        w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
+
+        # Update vertical velocity, displacement and atmospheric density:
+        particle.w_bal = w_rel + w_atm # Balloon's vertical velocity [m/s]
+        displacement += particle.w_bal*dt_inner # Accumulates displacement [m]
+        rho_atm = rho0 + slope*displacement # Extrapolates atmospheric density [kg/m^3]
+        particle.v_bal = Vol # Tracks changes in volume
+        
+    # Update altitude position [m]:
+    particle_ddepth += displacement 

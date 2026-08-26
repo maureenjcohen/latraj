@@ -112,7 +112,7 @@ SCALAR_FIELDS = {
 ### Functions for reorganising and reformatting LMD Planets simulation output
 # %%
 def make_file(ncout, udata, vdata, wdata, hghts, lats, lons,
-              n_times, time_len, scalars=None):
+              n_times, time_len, scalars=SCALAR_FIELDS):
     """ Fill an empty Dataset with the full run: all timesteps written to a
         single netCDF file (time dimension = n_times) rather than one file per
         step. udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes.

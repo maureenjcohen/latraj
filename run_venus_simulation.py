@@ -4,7 +4,7 @@ import xarray as xr
 import os, re
 from datetime import timedelta
 import parcels
-from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4_3D
+from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4
 import custom_kernels
 import config  # per-run settings; copy config_example.py -> config.py
 import importlib
@@ -43,11 +43,15 @@ def main():
     # Set up Parcels inputs
     filenames = {'U': paths,
                  'V': paths,
-                 'W': paths}
+                 'W': paths,
+                 'RHO': paths
+                }
 
     variables = {'U': 'U',
                  'V': 'V',
-                 'W': 'W'}
+                 'W': 'W',
+                 'RHO': 'RHO'
+                }
 
     dimensions = {'time': 'Time',
                   'depth': 'Height',
@@ -69,6 +73,7 @@ def main():
     cell_areas = parcels.Field(
         name="cell_areas", data=fieldset.U.cell_areas(), lon=x, lat=y)
     fieldset.add_field(cell_areas)
+  
     fieldset.add_constant("Cs", 0.1)
 
     # Convective vertical-wind (OU/AR(1)) parameters, Vega-1 calibration.
@@ -79,6 +84,17 @@ def main():
     fieldset.add_constant("conv_z_hi", 55000.0)  # convective layer top [m]
     fieldset.add_constant("conv_edge", 2000.0)   # taper half-width at each edge [m]
 
+    # Aerobot parameters
+    # Drag and virtual mass coefficients:
+    fieldset.add_constant("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_constant("C_m", 0.2) # Virtual mass coefficient
+    fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
+    fieldset.add_constant("V_infl", 72.6) # Enclosed volume of the profile [m^3]
+    fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
+    fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
+    fieldset.add_constant("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
+    #fieldset.add_constant("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
+    
     # Sanity check: seed depths must lie inside the file's vertical axis.
     # Catches unit mistakes (e.g. a Height axis accidentally written in km)
     # up front, instead of as cryptic out-of-bounds errors mid-run.
@@ -95,7 +111,7 @@ def main():
     # Create particle set (initial positions come from config.py)
     pset_clouds = ParticleSet.from_list(
         fieldset=fieldset,
-        pclass=VenusParticle,
+        pclass=BalloonParticle,
         lon=config.PARTICLE_LON,
         lat=config.PARTICLE_LAT,
         depth=config.PARTICLE_DEPTH,)
@@ -104,8 +120,7 @@ def main():
                   name=savedir + config.OUTPUT_NAME,
                   outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
     )
-
-    pset_clouds.execute([AdvectionRK4_3D, smagdiff, convection_ou, periodicBC, boundary_stick],
+    pset_clouds.execute([AdvectionRK4, balloon_vertical, smagdiff, periodicBC, boundary_stick], 
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
