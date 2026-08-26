@@ -58,13 +58,13 @@ def balloon_fieldset():
     return fieldset
 
 @pytest.fixture
-def balloon_fieldset2():
+def balloon_fieldset_variable_rho():
     """ Toy fieldset for test sims with balloon kernel with 
         variable rho for ceiling behaviour test """
     lon = np.arange(0, 360, dtype=np.float32)
     lat = np.arange(-90, 90, dtype=np.float32)
     alt = np.arange(0, 70000, 2000, dtype=np.float32)
-    rho_decay = np.array([68.4787*math.exp(-i/15900) for i in alt])
+    rho_decay = np.array([68.4787*math.exp(-i/12900) for i in alt])
     U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
@@ -127,37 +127,33 @@ def test_balloon_tracks_watm(balloon_fieldset):
         not double-count the vertical wind """
     tau = 1200.0 
     w_atm = balloon_fieldset.W[0, 49000, 20, 90]
-    #w_atm = 0.5
     balloon_fieldset.add_constant('m_gas_ZP', (balloon_fieldset.m_total / 10.86))
     pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
     assert pset.w_bal == pytest.approx(w_atm, rel=0.01)
 
-def test_ceiling_behaviour(balloon_fieldset2):
+def test_ceiling_behaviour(balloon_fieldset_variable_rho):
     """ Tests that the balloon arrests only when
         V = V_infl at the altitude where 
         m_total = rho_atm*V_infl """
     tau = 1200.0
-    rho_atm = 0.85
-    balloon_fieldset2.add_constant('m_gas_ZP', 5.65)
-    pset = ParticleSet(balloon_fieldset2, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
+    balloon_fieldset_variable_rho.add_constant('m_gas_ZP', 5.7)
+    pset = ParticleSet(balloon_fieldset_variable_rho, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
 
-    pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    assert pset.w_bal == pytest.approx(0, abs=0.1)
-    assert pset.depth == pytest.approx(55000, rel=2000)
-    assert rho_atm*balloon_fieldset2.V_infl == pytest.approx(balloon_fieldset2.m_total, rel=0.5)
+    pset.execute(balloon_vertical, runtime=100*tau, dt=600)
+    final_depth = pset.depth[0]
+    rho_final = balloon_fieldset_variable_rho.RHO[0, final_depth, 20, 90]
+    assert rho_final*balloon_fieldset_variable_rho.V_infl == pytest.approx(balloon_fieldset_variable_rho.m_total, rel=0.05)
+    assert pset.w_bal == pytest.approx(0, abs=0.01)
+    assert pset.v_bal == pytest.approx(balloon_fieldset_variable_rho.V_infl, rel=0.01)
 
 @pytest.mark.parametrize("v_rel", [0.5, 1, 2, 3])
 def test_tau_horizontal(balloon_fieldset, v_rel):
     """ Tests that tau_horizontal is well below
         the outer dt and is around 10s """
-    tau = 1200.0
-    rho_atm = 0.85
-    balloon_fieldset.add_constant('m_gas_ZP', 5.65)
-    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
-
-    pset.execute(balloon_vertical, runtime=10*tau, dt=600)
-    m_virtual = balloon_fieldset.C_m*rho_atm*pset.v_bal
+    rho_atm = 0.85 # density at balloon ceiling altitude
+    Vol = min(10.86 * 5.65 / rho_atm, balloon_fieldset.V_infl)
+    m_virtual = balloon_fieldset.C_m*rho_atm*Vol
     tau_horizontal = (balloon_fieldset.m_total + m_virtual)/(0.5*rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
     assert tau_horizontal <= (config.DT_MINUTES*60)/10

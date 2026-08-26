@@ -2,7 +2,6 @@
 # %% Imports
 import parcels
 from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, StatusCode, Variable
-from datetime import timedelta
 import math
 import numpy as np
 
@@ -198,8 +197,6 @@ def balloon_vertical(particle, fieldset, time):
         # Compute forces:
         w_rel_old = particle.w_bal - w_atm # Relative velocity [m/s]
         tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel_old)) # Drag relaxation [s]
-        F_drag = 0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * w_rel_old * math.fabs(w_rel_old) # Drag force [N] from Eq. (11)
-        F_net = rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus - F_drag # Net force [N] from Eq. (1)
         
         # Update relative velocity:
         a_buoy = (rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]
