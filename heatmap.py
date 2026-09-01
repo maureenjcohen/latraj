@@ -1,4 +1,5 @@
 import xarray as xr
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -48,6 +49,59 @@ def basic_heatmap(ds):
     plt.xlabel('Longitude / deg')
     plt.ylabel('Latitude / deg')
     plt.title('Potential trajectories through Venus cloud decks')
+    plt.show()
+
+def vega_heatmap(ds):
+    """ Plots a heatmap of latitude vs longitude for all trajectories.
+    Includes a colorbar showing the particle count in each bin."""
+    fig, ax = plt.subplots(1,1)
+    ds = ds.compute()
+
+    df = pd.read_csv('data/vg1bl_rdr.dat', sep="\s+", usecols=[11, 13], names=['Lat', 'Lon'], header=None)
+    xvega, yvega = df['Lon']*(180/np.pi), df['Lat']*(180/np.pi)
+    
+    # 1. Extract data for each trajectory
+    lon_raw = ds.lon.values.ravel()
+    lat_raw = ds.lat.values.ravel()
+    z_raw = ds.z.values.ravel()/1000
+    stuck = ds.stuck.values.ravel()
+
+    # 2. Apply boolean masks
+    mask = (stuck == 0.0) & np.isfinite(lon_raw) & np.isfinite(lat_raw)
+    lon_raw = lon_raw[mask]
+    lat_raw = lat_raw[mask]
+    z_raw = z_raw[mask]
+
+    # 3. Calculate heatmap histogram
+    heatmap_matrix, x_edge, y_edge = np.histogram2d(
+        lon_raw, 
+        lat_raw, 
+        bins=[360, 180], 
+        range=[[-180, 180], [-90, 90]], 
+        density=False
+    )
+        
+    # 4. Set heatmap edges
+    xmin, xmax = x_edge[0], x_edge[-1]
+    ymin, ymax = y_edge[0], y_edge[-1]
+
+    # 5. Plot heatmap
+    plt.imshow(
+        heatmap_matrix.T,
+        cmap = 'gist_heat_r',
+        aspect = 'auto',
+        interpolation = 'none',
+        origin = 'lower',
+        extent = [xmin, xmax, ymin, ymax]
+    )
+        
+    # 6. Format heatmap layout and show plot
+    plt.colorbar(label='Particle count')
+    plt.scatter(xvega, yvega, label='Vega 1 trajectory', marker='.')
+    plt.xlabel('Longitude / deg')
+    plt.ylabel('Latitude / deg')
+    plt.title('Potential trajectories through Venus cloud decks')
+    plt.legend()
     plt.show()
 
     
