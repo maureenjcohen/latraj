@@ -9,7 +9,6 @@ def basic_heatmap(ds):
     ds = ds.compute()
     
     # 1. Extract data for each trajectory
-    traj = ds.sel(trajectory=traj_id)
     lon_raw = ds.lon.values.ravel()
     lat_raw = ds.lat.values.ravel()
     z_raw = ds.z.values.ravel()/1000
@@ -22,7 +21,13 @@ def basic_heatmap(ds):
     z_raw = z_raw[mask]
 
     # 3. Calculate heatmap histogram
-    heatmap_matrix, x_edge, y_edge = np.histogram2d(lon_raw, lat_raw, bins=[360, 180], range=[[-180, 180], -[90, 90]], density=False)
+    heatmap_matrix, x_edge, y_edge = np.histogram2d(
+        lon_raw, 
+        lat_raw, 
+        bins=[360, 180], 
+        range=[[0, 180], [0, 9]], 
+        density=False
+    )
         
     # 4. Set heatmap edges
     xmin, xmax = x_edge[0], x_edge[-1]
@@ -31,7 +36,7 @@ def basic_heatmap(ds):
     # 5. Plot heatmap
     plt.imshow(
         heatmap_matrix.T,
-        cmap = 'viridis',
+        cmap = 'gist_heat_r',
         aspect = 'auto',
         interpolation = 'none',
         origin = 'lower',
@@ -78,7 +83,7 @@ def double_heatmap(ds):
         lon_raw,
         z_raw,
         bins=[360, 150],
-        #range=[[-180, 180], [0, 80]], # Hash out as needed to "zoom in"
+        range=[[-180, 180], [0, 80]], # Hash out as needed to "zoom in"
         density=False
     )
         
