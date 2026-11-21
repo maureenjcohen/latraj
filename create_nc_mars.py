@@ -152,7 +152,7 @@ def build_dataset(udata, vdata, wdata, hghts, lats, lons, n_times, time_len, n_c
     return ds 
 
 # %%
-def run_preprocess(inputfile, savedir, testname, halo_cells):
+def run_preprocess(inputfile, savedir, testname, halo_cells=3):
 
     """ Input the path to a file containing LMD Planets simulation data
         Input directory into which to save preprocessed files for Parcels

@@ -2,11 +2,9 @@
 import xarray as xr, numpy as np
 import os
 from datetime import timedelta
-import parcels._sgrid as sgrid
-from parcels import FieldSet, SphericalMesh, ParticleSet, ParticleFile, Particle
+from parcels import FieldSet, SphericalMesh, ParticleSet, ParticleFile
 from parcels.kernels import AdvectionRK4_3D
 import custom_kernels
-from fieldset_tools import add_cell_areas
 import config  # per-run settings; copy config_example.py -> config.py
 import importlib
 
@@ -27,7 +25,7 @@ def main():
     multi-day integration. Run the simulation with:  python run_mars_simulation.py
     """
     datadir = config.DATA_DIR  # Where the preprocessed input files live
-    savedir = config.SAVE_DIR  # Where to save output zarrs
+    savedir = config.SAVE_DIR  # Where to save output parquet files
 
     input_path = os.path.join(datadir, config.EXPERIMENT_NAME + '.nc')
     ds = xr.open_dataset(input_path)
@@ -43,7 +41,7 @@ def main():
     # Create particle set (initial positions come from config.py)
     pset = ParticleSet(
         fieldset=fieldset,
-        pclass=Particle,
+        pclass=MarsParticle,
         x=config.PARTICLE_LON,
         y=config.PARTICLE_LAT,
         z=config.PARTICLE_DEPTH,)
@@ -51,17 +49,12 @@ def main():
     output_path = os.path.join(savedir, os.path.splitext(config.OUTPUT_NAME)[0] + '.parquet')
     output_file = ParticleFile(output_path, outputdt=timedelta(minutes=config.OUTPUT_MINUTES), mode='w')
 
-    pset.execute([periodicBC, AdvectionRK4_3D, surface_bounce, boundary_stick],
+    pset.execute([AdvectionRK4_3D, surface_bounce, periodicBC, boundary_stick],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
                  verbose_progress=True,
     )
-    print("t    :", pset._data["t"][:])
-    print("dt   :", pset._data["dt"][:])
-    print("state:", pset._data["state"][:])
-    print("x,y,z:", pset._data["x"][:], pset._data["y"][:], pset._data["z"][:])
-    print("nparts:", len(pset))
 
 
 

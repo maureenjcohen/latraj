@@ -16,6 +16,13 @@ VenusParticle = Particle.add_variable([
 ])
 
 # %%
+## Custom particle class for Mars simulations.
+## stuck is set to 1 by boundary_stick when a particle is frozen at the boundary.
+MarsParticle = Particle.add_variable(
+                Variable("stuck", dtype=np.int32, initial=0, to_write=True),
+)
+
+# %%
 ## Custom particle class for Venus Aerobot simulations.
 ## w_bal is the vertical velocity of the balloon (m/s) and v_bal the current
 ## balloon volume (m^3), both starting at 0. u_conv and stuck are as in VenusParticle.
@@ -45,8 +52,13 @@ def boundary_stick(particles, fieldset):
 
 # %%
 def periodicBC(particles, fieldset):
-    lon_min = fieldset.lon_min
-    particles.x = np.mod(np.asarray(particles.x) - lon_min, fieldset.lon_span) + lon_min
+    """ Wrap the end-of-step longitude x + dx into [lon_min, lon_min + lon_span).
+        Parcels applies dx after the whole kernel chain, so the wrap is done on dx;
+        this kernel must come after every kernel that adds to dx (advection,
+        diffusion) so that output longitudes are always inside the domain. """
+    x = np.asarray(particles.x)
+    x_new = np.mod(x + np.asarray(particles.dx) - fieldset.lon_min, fieldset.lon_span) + fieldset.lon_min
+    particles.dx = x_new - x
 
 # %%
 def polarBC(particles, fieldset):

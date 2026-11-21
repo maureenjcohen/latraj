@@ -1,26 +1,32 @@
-import custom_kernels, parcels
+import custom_kernels
 import pytest
 import numpy as np
 import math
 import xarray as xr
 import parcels._sgrid as sgrid
 import config
-from custom_kernels import convection_ou, balloon_vertical, VenusParticle, BalloonParticle
-from fieldset_tools import agrid_sgrid_metadata
+from custom_kernels import (convection_ou, balloon_vertical, boundary_stick, periodicBC,
+                            surface_bounce, smagdiff, MarsParticle, VenusParticle, BalloonParticle)
+from fieldset_tools import agrid_sgrid_metadata, add_cell_areas
 from parcels import FieldSet, ParticleSet, SphericalMesh
+from parcels.kernels import AdvectionRK4, AdvectionRK4_3D
 
-def toy_fieldset(fields, lon, lat, alt):
+def toy_fieldset(fields, lon, lat, alt, n_times=1):
     """ Build a time-constant Parcels v4 FieldSet from 3-D (alt, lat, lon) arrays,
-        using the same SGRID A-grid layout as the preprocessed model files. """
-    data_vars = {name: (["time", "height", "lat", "lon"], np.asarray(arr, dtype=np.float32)[None])
+        using the same SGRID A-grid layout as the preprocessed model files.
+        n_times > 1 repeats the data at hourly timestamps, which gives the
+        FieldSet a finite time interval (needed by add_cell_areas). """
+    data_vars = {name: (["time", "height", "lat", "lon"],
+                        np.repeat(np.asarray(arr, dtype=np.float32)[None], n_times, axis=0))
                  for name, arr in fields.items()}
+    times = np.datetime64("1987-03-30T00:00:00", "ns") + np.arange(n_times) * np.timedelta64(1, "h")
     ds = xr.Dataset(
         data_vars=data_vars,
         coords={
             "lon": ("lon", lon, {"axis": "X", "units": "degrees_east"}),
             "lat": ("lat", lat, {"axis": "Y", "units": "degrees_north"}),
             "depth": ("height", alt, {"axis": "Z", "units": "m", "positive": "up"}),
-            "time": ("time", np.array([np.datetime64("1987-03-30T00:00:00", "ns")]), {"axis": "T"}),
+            "time": ("time", times, {"axis": "T"}),
         },
     )
     ds = sgrid._attach_sgrid_metadata(ds, agrid_sgrid_metadata())
@@ -173,3 +179,121 @@ def test_tau_horizontal(balloon_fieldset, v_rel):
     m_virtual = balloon_fieldset.C_m*rho_atm*Vol
     tau_horizontal = (balloon_fieldset.m_total + m_virtual)/(0.5*rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
     assert tau_horizontal <= (config.DT_MINUTES*60)/10
+
+def uniform_wind_fieldset(u=0.0, v=0.0, w=0.0, lon=None, n_times=1):
+    """ Toy fieldset with spatially uniform winds on a 1-degree grid """
+    if lon is None:
+        lon = np.arange(0, 360, dtype=np.float32)
+    lat = np.arange(-90, 90, dtype=np.float32)
+    alt = np.arange(0, 70000, 2000, dtype=np.float32)
+    shape = (alt.size, lat.size, lon.size)
+    return toy_fieldset({"U": np.full(shape, u), "V": np.full(shape, v), "W": np.full(shape, w)},
+                        lon, lat, alt, n_times=n_times)
+
+@pytest.mark.parametrize("pclass", [MarsParticle, VenusParticle, BalloonParticle])
+def test_boundary_stick_freezes_particle(pclass):
+    """ A particle advected out through the northern edge of the domain is frozen
+        at its last position and flagged stuck, instead of crashing the run.
+        Covers every particle class used with boundary_stick. """
+    fieldset = uniform_wind_fieldset(v=100.0) # 100 m/s northward: 0.54 deg per 600 s step
+    y0 = 88.8 # Within one step of the last latitude node (89 deg)
+    pset = ParticleSet(fieldset, pclass=pclass, x=10.0, y=y0, z=30000.0)
+
+    pset.execute([AdvectionRK4, boundary_stick], runtime=1800, dt=600, verbose_progress=False)
+    assert pset.stuck[0] == 1
+    assert pset.y[0] == pytest.approx(y0)
+
+def test_boundary_stick_leaves_inbounds_particle():
+    """ A particle that stays inside the domain is advected normally and not flagged """
+    fieldset = uniform_wind_fieldset(v=10.0)
+    pset = ParticleSet(fieldset, pclass=MarsParticle, x=10.0, y=0.0, z=30000.0)
+
+    pset.execute([AdvectionRK4, boundary_stick], runtime=1800, dt=600, verbose_progress=False)
+    assert pset.stuck[0] == 0
+    assert pset.y[0] > 0.0
+
+@pytest.mark.parametrize("u, x0", [(50.0, 359.9), (-50.0, 0.1)])
+def test_periodicBC_wraps_every_output_step(u, x0):
+    """ A particle crossing the 0/360 seam (eastward and westward) is wrapped on
+        the step it crosses, so its longitude never leaves [lon_min, lon_min + lon_span).
+        The toy grid carries a 3-degree halo on each side, as the preprocessed files do. """
+    lon = np.arange(-3, 363, dtype=np.float32)
+    fieldset = uniform_wind_fieldset(u=u, lon=lon)
+    fieldset.add_context("lon_min", 0.0)
+    fieldset.add_context("lon_span", 360.0)
+    pset = ParticleSet(fieldset, pclass=MarsParticle, x=x0, y=0.0, z=30000.0)
+
+    step_deg = abs(u) * 600 / fieldset.UV.grid.deg2m # Longitude change per step at the equator
+    xs = []
+    for _ in range(4):
+        pset.execute([AdvectionRK4, periodicBC, boundary_stick], runtime=600, dt=600, verbose_progress=False)
+        xs.append(float(pset.x[0]))
+    xs = np.array(xs)
+    assert np.all((xs >= 0.0) & (xs < 360.0)), f"unwrapped longitude in {xs}"
+    # Unwrapped path is a straight line: each step moves step_deg in the wind direction
+    unwrapped = np.unwrap(np.deg2rad(np.concatenate([[x0], xs]))) * 180 / np.pi
+    np.testing.assert_allclose(np.diff(unwrapped), np.sign(u) * step_deg, rtol=1e-3)
+
+def test_surface_bounce_returns_particle_to_lowest_level():
+    """ A particle driven down through the lowest model level is put back on it
+        instead of raising ErrorThroughSurface. """
+    fieldset = uniform_wind_fieldset(w=-1.0) # 1 m/s downward: 600 m per step
+    pset = ParticleSet(fieldset, pclass=MarsParticle, x=10.0, y=0.0, z=100.0)
+
+    pset.execute([AdvectionRK4_3D, surface_bounce, boundary_stick], runtime=600, dt=600, verbose_progress=False)
+    assert pset.z[0] == pytest.approx(float(fieldset.W.grid.depth[0]))
+
+def smagdiff_fieldset(u):
+    """ Toy fieldset with winds u (3-D array), cell_areas and the Smagorinsky constant """
+    lon = np.arange(0, 360, dtype=np.float32)
+    lat = np.arange(-90, 90, dtype=np.float32)
+    alt = np.arange(0, 70000, 2000, dtype=np.float32)
+    zeros = np.zeros_like(u)
+    fieldset = toy_fieldset({"U": u, "V": zeros, "W": zeros}, lon, lat, alt, n_times=2)
+    fieldset = add_cell_areas(fieldset, fieldset.UV.grid.mesh.radius)
+    fieldset.add_context("Cs", 0.1)
+    return fieldset
+
+def test_smagdiff_no_diffusion_without_wind():
+    """ With no wind there are no velocity gradients, so the Smagorinsky
+        diffusivity and the random displacement are both zero. """
+    fieldset = smagdiff_fieldset(np.zeros((35, 180, 360), dtype=np.float32))
+    pset = ParticleSet(fieldset, pclass=MarsParticle, x=np.full(10, 100.0),
+                       y=np.full(10, 10.0), z=np.full(10, 30000.0))
+
+    pset.execute(smagdiff, runtime=1800, dt=600, verbose_progress=False)
+    np.testing.assert_array_equal(pset.x, 100.0)
+    np.testing.assert_array_equal(pset.y, 10.0)
+
+def test_smagdiff_displacement_scales_with_root_strain():
+    """ Kh is proportional to the strain rate, and the displacement to sqrt(Kh).
+        Doubling a linear shear doubles every velocity gradient, so with the same
+        random draws each displacement grows by exactly sqrt(2). """
+    lat = np.arange(-90, 90, dtype=np.float32)
+    shear = np.broadcast_to((0.5 * lat)[None, :, None], (35, 180, 360)).astype(np.float32)
+    displacements = []
+    for factor in (1.0, 2.0):
+        fieldset = smagdiff_fieldset(factor * shear)
+        np.random.seed(7)
+        pset = ParticleSet(fieldset, pclass=MarsParticle, x=np.full(50, 100.0),
+                           y=np.full(50, 10.0), z=np.full(50, 30000.0))
+        pset.execute(smagdiff, runtime=600, dt=600, verbose_progress=False)
+        displacements.append(np.asarray(pset.y, dtype=np.float64) - 10.0)
+    np.testing.assert_allclose(displacements[1], np.sqrt(2.0) * displacements[0], rtol=1e-3, atol=1e-6)
+
+def test_smagdiff_diffuses_in_sheared_flow():
+    """ Meridional shear in U gives a non-zero diffusivity: particles spread out,
+        with finite displacements centred on the release point. """
+    lat = np.arange(-90, 90, dtype=np.float32)
+    u = np.broadcast_to((0.5 * lat)[None, :, None], (35, 180, 360)).astype(np.float32) # dU/dlat = 0.5 m/s per degree
+    fieldset = smagdiff_fieldset(u)
+    np.random.seed(42)
+    n = 2000
+    pset = ParticleSet(fieldset, pclass=MarsParticle, x=np.full(n, 100.0),
+                       y=np.full(n, 10.0), z=np.full(n, 30000.0))
+
+    pset.execute(smagdiff, runtime=1800, dt=600, verbose_progress=False)
+    dy = np.asarray(pset.y) - 10.0
+    assert np.all(np.isfinite(dy))
+    assert np.std(dy) > 0.0
+    assert abs(np.mean(dy)) < 3 * np.std(dy) / np.sqrt(n)

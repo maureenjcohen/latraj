@@ -28,6 +28,12 @@ def add_zonal_halo(ds, n_cells):
         Parcels4 currently doesn't wrap.
         Hopefully temporary and v4 won't need this in its final release. """
     lon = ds.lon.values
+    if lon[-1] - lon[0] >= 360.0:
+        raise ValueError(
+            f"Longitude axis spans {lon[0]:g} to {lon[-1]:g}, which repeats the cyclic "
+            "endpoint. Drop the duplicate column before adding the halo, otherwise "
+            "the seam longitude appears twice and the axis is not strictly increasing."
+        )
     west = ds.isel(lon=slice(-n_cells, None)).assign_coords(lon=lon[-n_cells:] - 360.0)
     east = ds.isel(lon=slice(0, n_cells)).assign_coords(lon=lon[:n_cells] + 360.0)
     out = xr.concat([west, ds, east], dim="lon")
