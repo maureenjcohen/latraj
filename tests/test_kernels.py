@@ -145,9 +145,12 @@ def test_conv_distribution_stationary(convection_fieldset):
     assert np.var(u_conv) == pytest.approx(1.0, abs=0.1)
 
 def test_balloon_tracks_watm(balloon_fieldset):
-    """ Tests that the balloon kernel tracks W_atm and does 
-        not double-count the vertical wind """
-    tau = 1200.0 
+    """ Tests that the balloon kernel tracks W_atm and does
+        not double-count the vertical wind. Convective noise is switched off:
+        the kernel adds it to w_atm, so with it on w_bal tracks a random wind
+        rather than the field value this test compares against. """
+    tau = 1200.0
+    balloon_fieldset.context["conv_sigma"] = 0.0
     w_atm = balloon_fieldset.W[0, 49000, 20, 90]
     balloon_fieldset.add_context('m_gas_ZP', (balloon_fieldset.m_total / 10.86))
     pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, x=90, y=20, z=49000)
