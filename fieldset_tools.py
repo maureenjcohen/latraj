@@ -67,3 +67,24 @@ def add_cell_areas(fieldset, radius):
     ca = sgrid._attach_sgrid_metadata(ca, agrid_sgrid_metadata())
     ca_fs = FieldSet.from_sgrid_conventions(ca, mesh=SphericalMesh(radius=radius))
     return fieldset + ca_fs
+
+# %%
+def check_timestep(fieldset, dt_seconds):
+    """ The balloon is advected horizontally as a passive tracer, which holds only
+        while horizontal drag relaxes its velocity to the wind much faster than one
+        timestep. Raises ValueError if dt is under 10 horizontal drag relaxation
+        times, evaluated for a fully inflated balloon at the ceiling density
+        (rho_ceiling) and a small relative wind (v_rel_h_ref), the slow case. """
+    rho = fieldset.rho_ceiling
+    vol = min(10.86 * fieldset.m_gas_ZP / rho, fieldset.V_infl)
+    m_virtual = fieldset.C_m * rho * vol
+    tau_horizontal = (fieldset.m_total + m_virtual) / (
+        0.5 * rho * fieldset.C_D_side * fieldset.A_side * fieldset.v_rel_h_ref)
+    if dt_seconds < 10 * tau_horizontal:
+        raise ValueError(
+            f"Timestep {dt_seconds:g} s is too short: the horizontal drag relaxation "
+            f"time is {tau_horizontal:.1f} s, so horizontal drag is no longer negligible "
+            f"and passive horizontal advection is invalid. Use a timestep of at least "
+            f"{10 * tau_horizontal:.0f} s (DT_MINUTES >= {10 * tau_horizontal / 60:.2f}) "
+            "in config.py."
+        )

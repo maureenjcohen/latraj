@@ -5,7 +5,7 @@ from datetime import timedelta
 from parcels import FieldSet, SphericalMesh, ParticleSet, ParticleFile
 from parcels.kernels import AdvectionRK4
 import custom_kernels
-from fieldset_tools import add_cell_areas
+from fieldset_tools import add_cell_areas, check_timestep
 import config  # per-run settings; copy config_example.py -> config.py
 import importlib
 
@@ -23,8 +23,8 @@ def add_venus_context(fieldset):
         to the fieldset as Parcels v4 context values. """
     fieldset.add_context("Cs", 0.1)
 
-    # Convective vertical-wind (OU/AR(1)) parameters, Vega-1 calibration.
-    # See vega_convection.py for their derivation from the Vega balloon W_a data.
+    # Convective vertical-wind (OU/AR(1)) parameters, calibrated to the Vega-1
+    # balloon vertical-wind (W_a) data.
     fieldset.add_context("conv_sigma", 0.6)     # convective w std [m/s], de-biased W_a
     fieldset.add_context("conv_tau", 1200.0)    # correlation time [s] (~20 min)
     fieldset.add_context("conv_z_lo", 48000.0)  # convective layer bottom [m]
@@ -34,12 +34,17 @@ def add_venus_context(fieldset):
     # Aerobot parameters
     # Drag and virtual mass coefficients:
     fieldset.add_context("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_context("C_D_side", 1.0) # Drag coefficient for horizontal motion
     fieldset.add_context("C_m", 0.2) # Virtual mass coefficient
     fieldset.add_context("A_top", 19.6) # Upper area [m^2]
+    fieldset.add_context("A_side", 22.9) # Silhouette area of profile [m^2]
     fieldset.add_context("V_infl", 72.6) # Enclosed volume of the profile [m^3]
     fieldset.add_context("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
     fieldset.add_context("m_total", 62) # Total mass: helium + envelopes + payload [kg]
     fieldset.add_context("m_gas_ZP", 5.75) # Mass of helium in the ZP balloon [kg]
+    # Reference case for the timestep check (check_timestep):
+    fieldset.add_context("rho_ceiling", 0.85) # Atmospheric density at the balloon ceiling [kg/m^3]
+    fieldset.add_context("v_rel_h_ref", 0.5) # Small horizontal wind relative to the balloon [m/s]
     #fieldset.add_context("m_gas_SP", ) # Mass of helium in the SP balloon [kg] - not needed until later
 
 # %%
@@ -79,6 +84,7 @@ def main():
     add_venus_context(fieldset)
 
     check_seed_depths(fieldset, config.PARTICLE_DEPTH)
+    check_timestep(fieldset, config.DT_MINUTES * 60)
 
     # Create particle set (initial positions come from config.py)
     pset_clouds = ParticleSet(

@@ -61,23 +61,6 @@ def periodicBC(particles, fieldset):
     particles.dx = x_new - x
 
 # %%
-def polarBC(particles, fieldset):
-    lat = np.asarray(particles.y)
-    lon = np.asarray(particles.x)
-    lon_min, lon_span = fieldset.lon_min, fieldset.lon_span
-    lat_max, lat_min = fieldset.lat_max, fieldset.lat_min
-
-    north = lat > lat_max
-    south = lat < lat_min
-
-    lat = np.where(north, 180.0 - lat, lat)
-    lat = np.where(south, -180.0 - lat, lat)
-    lon = np.where(north | south, np.mod(lon - lon_min + 180.0, lon_span) + lon_min, lon)
-
-    particles.y = lat
-    particles.x = lon
-
-# %%
 def smagdiff(particles, fieldset):
     """ Smagorinsky horizontal diffusion scheme adapted from
         https://oceanparcels.org/tutorials/advanced/smagorinsky_diffusion.html
@@ -111,9 +94,9 @@ def smagdiff(particles, fieldset):
 # %%
 def convection_ou(particles, fieldset):
     """ Convective vertical-wind kernel: an Ornstein-Uhlenbeck / AR(1) red-noise
-        process calibrated to the Vega balloon anemometer data (see
-        vega_convection.py). Each parcel carries a dimensionless, zero-mean,
-        unit-variance state u_conv, advanced by the exact OU update
+        process calibrated to the Vega balloon anemometer data. Each parcel
+        carries a dimensionless, zero-mean, unit-variance state u_conv, advanced
+        by the exact OU update
 
             a      = exp(-|dt| / tau)
             u_conv = a * u_conv + sqrt(1 - a^2) * g,   g ~ N(0, 1)
@@ -212,7 +195,8 @@ def balloon_vertical(particles, fieldset):
 
         # Compute forces:
         w_rel_old = w_bal - w_atm # Relative velocity [m/s]
-        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * np.fabs(w_rel_old)) # Drag relaxation [s]
+        # |w_rel_old| is floored so tau_vertical stays finite when the balloon moves with the air
+        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * np.maximum(np.fabs(w_rel_old), 1e-6)) # Drag relaxation [s]
 
         # Update relative velocity:
         a_buoy = (rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]

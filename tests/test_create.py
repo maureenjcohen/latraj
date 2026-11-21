@@ -1,10 +1,9 @@
 """ Tests for the create_nc_venus preprocessing script.
 
-    Regression context: the height axis was once written in km instead of the
-    metres Parcels expects (the *1e3 conversion was silently lost), which made
-    every particle seed depth out of bounds and surfaced only as cryptic
-    out-of-bounds/zero-density errors deep inside kernel execution. These tests
-    pin the axis units at the source.
+    Parcels expects the height axis in metres. An axis in km puts every seed
+    depth out of bounds, which surfaces only as cryptic out-of-bounds or
+    zero-density errors inside kernel execution, so these tests pin the axis
+    units at the source.
 """
 import sys
 import types

@@ -4,10 +4,9 @@ import numpy as np
 import math
 import xarray as xr
 import parcels._sgrid as sgrid
-import config
 from custom_kernels import (convection_ou, balloon_vertical, boundary_stick, periodicBC,
                             surface_bounce, smagdiff, MarsParticle, VenusParticle, BalloonParticle)
-from fieldset_tools import agrid_sgrid_metadata, add_cell_areas
+from fieldset_tools import agrid_sgrid_metadata, add_cell_areas, check_timestep
 from parcels import FieldSet, ParticleSet, SphericalMesh
 from parcels.kernels import AdvectionRK4, AdvectionRK4_3D
 
@@ -90,9 +89,9 @@ def balloon_fieldset_variable_rho():
     rho_decay = np.array([68.4787*math.exp(-i/12900) for i in alt])
     U = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
-    W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
+    W = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     RHO = np.tile(rho_decay[:, np.newaxis, np.newaxis], (1, lat.size, lon.size))
-    # 3-D wind field with most winds 0 m/s
+    # Still air, so only buoyancy can lift the balloon to its ceiling
     fieldset = toy_fieldset({"U": U, "V": V, "W": W, 'RHO': RHO}, lon, lat, alt)
     fieldset.add_context("conv_sigma", 0)
     fieldset.add_context("conv_tau", 1200.0)
@@ -158,30 +157,49 @@ def test_balloon_tracks_watm(balloon_fieldset):
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
     assert pset.w_bal == pytest.approx(w_atm, rel=0.01)
 
+@pytest.mark.parametrize("m_gas_ZP", [62 / 10.86, 5.75])
+def test_balloon_zero_relative_velocity(balloon_fieldset, m_gas_ZP):
+    """ A balloon moving exactly with the air (w_rel = 0, so no drag) must give a
+        finite update, and accelerates in the direction of its net buoyancy. """
+    balloon_fieldset.context["conv_sigma"] = 0.0
+    balloon_fieldset.add_context('m_gas_ZP', m_gas_ZP)
+    w_atm = float(np.asarray(balloon_fieldset.W[0, 49000, 20, 90]).squeeze())
+    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, x=90, y=20, z=49000, w_bal=w_atm)
+
+    pset.execute(balloon_vertical, runtime=600, dt=600)
+    assert np.isfinite(pset.w_bal[0]) and np.isfinite(pset.z[0])
+    if m_gas_ZP > 62 / 10.86:
+        assert pset.w_bal[0] > w_atm
+    else:
+        assert pset.w_bal[0] == pytest.approx(w_atm, abs=1e-3)
+
 def test_ceiling_behaviour(balloon_fieldset_variable_rho):
     """ Tests that the balloon arrests only when
         V = V_infl at the altitude where 
         m_total = rho_atm*V_infl """
     tau = 1200.0
-    balloon_fieldset_variable_rho.add_context('m_gas_ZP', 5.7)
+    balloon_fieldset_variable_rho.add_context('m_gas_ZP', 5.75)
     pset = ParticleSet(balloon_fieldset_variable_rho, pclass=BalloonParticle, x=90, y=20, z=49000)
 
     pset.execute(balloon_vertical, runtime=100*tau, dt=600)
     final_depth = pset.z[0]
     rho_final = balloon_fieldset_variable_rho.RHO[0, final_depth, 20, 90]
-    assert rho_final*balloon_fieldset_variable_rho.V_infl == pytest.approx(balloon_fieldset_variable_rho.m_total, rel=0.05)
+    assert rho_final*balloon_fieldset_variable_rho.V_infl == pytest.approx(balloon_fieldset_variable_rho.m_total, rel=0.01)
     assert pset.w_bal == pytest.approx(0, abs=0.01)
     assert pset.v_bal == pytest.approx(balloon_fieldset_variable_rho.V_infl, rel=0.01)
 
-@pytest.mark.parametrize("v_rel", [0.5, 1, 2, 3])
-def test_tau_horizontal(balloon_fieldset, v_rel):
-    """ Tests that tau_horizontal is well below
-        the outer dt and is around 10s """
-    rho_atm = 0.85 # density at balloon ceiling altitude
-    Vol = min(10.86 * 5.65 / rho_atm, balloon_fieldset.V_infl)
-    m_virtual = balloon_fieldset.C_m*rho_atm*Vol
-    tau_horizontal = (balloon_fieldset.m_total + m_virtual)/(0.5*rho_atm*balloon_fieldset.C_D_side*balloon_fieldset.A_side*v_rel)
-    assert tau_horizontal <= (config.DT_MINUTES*60)/10
+@pytest.mark.parametrize("dt, ok", [(300, True), (120, False)])
+def test_check_timestep(balloon_fieldset, dt, ok):
+    """ The horizontal drag relaxation time at the reference case is ~15.3 s, so
+        the shortest valid timestep is ~153 s: 300 s passes and 120 s raises. """
+    balloon_fieldset.add_context("m_gas_ZP", 5.75)
+    balloon_fieldset.add_context("rho_ceiling", 0.85)
+    balloon_fieldset.add_context("v_rel_h_ref", 0.5)
+    if ok:
+        check_timestep(balloon_fieldset, dt)
+    else:
+        with pytest.raises(ValueError, match="too short"):
+            check_timestep(balloon_fieldset, dt)
 
 def uniform_wind_fieldset(u=0.0, v=0.0, w=0.0, lon=None, n_times=1):
     """ Toy fieldset with spatially uniform winds on a 1-degree grid """
