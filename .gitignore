@@ -17,6 +17,7 @@ config.py
 .vscode/
 
 VenusTest/
+planning/
 
 *.txt
 *.pdf

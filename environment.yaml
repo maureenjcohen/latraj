@@ -6,7 +6,7 @@ dependencies:
         - python=3.13
         - numpy
         - matplotlib
-        - parcels
+        - parcels>=4.0.3
         - netCDF4
         - xarray
         - plotly
@@ -16,4 +16,5 @@ dependencies:
         - jupyter
         - prettytable
         - pytest
+        - seaborn
 

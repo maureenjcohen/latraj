@@ -1,11 +1,12 @@
 # %%
-import netCDF4 as nc
-import xarray as xr
-import os, re
+import xarray as xr, numpy as np
+import os
 from datetime import timedelta
-import parcels
-from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, AdvectionRK4_3D
+import parcels._sgrid as sgrid
+from parcels import FieldSet, SphericalMesh, ParticleSet, ParticleFile, Particle
+from parcels.kernels import AdvectionRK4_3D
 import custom_kernels
+from fieldset_tools import add_cell_areas
 import config  # per-run settings; copy config_example.py -> config.py
 import importlib
 
@@ -14,18 +15,8 @@ importlib.reload(config) # Run if config settings have been changed
 importlib.reload(custom_kernels)
 from custom_kernels import *
 
-# Get filepaths of all files in datadir
 # %%
-def alphanumeric_sort(lst):
-
-    def convert(text):
-        return int(text) if text.isdigit() else text
-
-    def alphanum_key(key):
-        return [convert(c) for c in re.split('([0-9]+)', key)]
-
-    return sorted(lst, key=alphanum_key)
-
+PLANET_RADIUS = 3.3895e6 # Mars radius in m
 
 # %%
 def main():
@@ -33,58 +24,45 @@ def main():
 
     Wrapped in a function (rather than running at import time) so that
     custom_kernels and helpers can be imported and tested without kicking off a
-    multi-day integration. Run the simulation with:  python run_simulation.py
+    multi-day integration. Run the simulation with:  python run_mars_simulation.py
     """
     datadir = config.DATA_DIR  # Where the preprocessed input files live
     savedir = config.SAVE_DIR  # Where to save output zarrs
 
-    paths = [datadir + '/' + f for f in alphanumeric_sort(os.listdir(datadir))]
+    input_path = os.path.join(datadir, config.EXPERIMENT_NAME + '.nc')
+    ds = xr.open_dataset(input_path)
 
-    # Set up Parcels inputs
-    filenames = {'U': paths,
-                 'V': paths,
-                 'W': paths}
-
-    variables = {'U': 'U',
-                 'V': 'V',
-                 'W': 'W'}
-
-    dimensions = {'time': 'Time',
-                  'depth': 'Height',
-                  'lat': 'Latitude',
-                  'lon': 'Longitude'}
-
-    # Create the FieldSet
-    fieldset = FieldSet.from_netcdf(filenames,
-                                    variables,
-                                    dimensions,
-                                    allow_time_extrapolation=False)
-
-    fieldset.add_constant("halo_west", fieldset.U.grid.lon[0])
-    fieldset.add_constant("halo_east", fieldset.U.grid.lon[-1])
-    fieldset.add_periodic_halo(zonal=True, meridional=False)
-    x = fieldset.U.grid.lon
-    y = fieldset.U.grid.lat
+    fieldset = FieldSet.from_sgrid_conventions(ds, mesh=SphericalMesh(radius = PLANET_RADIUS))
+    # periodicBC wrap domain
+    fieldset.add_context("lon_min", 0.0)
+    fieldset.add_context("lon_span", 360.0)
+    lat = np.asarray(fieldset.U.grid.lat)
+    fieldset.add_context("lat_min", float(lat.min()))   # -87.159096
+    fieldset.add_context("lat_max", float(lat.max()))   #  87.159096
 
     # Create particle set (initial positions come from config.py)
-    pset_clouds = ParticleSet.from_list(
+    pset = ParticleSet(
         fieldset=fieldset,
-        pclass=JITParticle,
-        lon=config.PARTICLE_LON,
-        lat=config.PARTICLE_LAT,
-        depth=config.PARTICLE_DEPTH,)
+        pclass=Particle,
+        x=config.PARTICLE_LON,
+        y=config.PARTICLE_LAT,
+        z=config.PARTICLE_DEPTH,)
 
-    output_file = pset_clouds.ParticleFile(
-                  name=savedir + config.OUTPUT_NAME,
-                  outputdt=timedelta(minutes=config.OUTPUT_MINUTES),
-    )
+    output_path = os.path.join(savedir, os.path.splitext(config.OUTPUT_NAME)[0] + '.parquet')
+    output_file = ParticleFile(output_path, outputdt=timedelta(minutes=config.OUTPUT_MINUTES), mode='w')
 
-    pset_clouds.execute([AdvectionRK4_3D, surface_bounce, periodicBC],
+    pset.execute([periodicBC, AdvectionRK4_3D, surface_bounce, boundary_stick],
                  runtime=timedelta(days=config.RUNTIME_DAYS),
                  dt=timedelta(minutes=config.DT_MINUTES),
                  output_file=output_file,
                  verbose_progress=True,
     )
+    print("t    :", pset._data["t"][:])
+    print("dt   :", pset._data["dt"][:])
+    print("state:", pset._data["state"][:])
+    print("x,y,z:", pset._data["x"][:], pset._data["y"][:], pset._data["z"][:])
+    print("nparts:", len(pset))
+
 
 
 # %%

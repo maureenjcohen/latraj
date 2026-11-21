@@ -1,70 +1,82 @@
-""" Custom kernels for Parcels trajectory simulations in the Venus atmosphere """
+""" Custom kernels for Parcels v4 trajectory simulations in planetary atmospheres """
 # %% Imports
-import parcels
-from parcels import FieldSet, ParticleSet, JITParticle, ScipyParticle, StatusCode, Variable
-import math
+from parcels import Particle, Variable, StatusCode
 import numpy as np
 
 # %%
-class VenusParticle(JITParticle):
-    """ Custom particle class for Venus simulations.
-
-    Carries u_conv, the dimensionless Ornstein-Uhlenbeck / AR(1) red-noise state
-    used by the convection kernel. It starts at 0; the OU process relaxes to its
-    stationary N(0,1) distribution within a few correlation times (~1 hr for
-    tau = 20 min), which is negligible against the multi-day integration.
-    """
-    u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
-    stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
-
-# %%
-class BalloonParticle(JITParticle):
-    """ Custom particle class for Venus Aerobot simulations.
-
-    Carries w_bal, the vertical velocity of the balloon (m/s), starting at 0;
-    v_bal, the current balloon volume (m^3), starting at 0; and u_conv, the
-    dimensionless Ornstein-Uhlenbeck red-noise state mentioned in the
-    VenusParticle kernel, starting at 0.
-    """
-    w_bal = Variable('w_bal', dtype=np.float32, initial=0.0, to_write=True)
-    v_bal = Variable('v_bal', dtype=np.float32, initial=0.0, to_write=True)
-    u_conv = Variable('u_conv', dtype=np.float32, initial=0.0, to_write=True)
-    stuck = Variable('stuck', dtype=np.int32, initial=0.0, to_write=True)
+## Custom particle class for Venus simulations.
+## u_conv is the dimensionless Ornstein-Uhlenbeck / AR(1) red-noise state used by
+## the convection kernel. It starts at 0; the OU process relaxes to its stationary
+## N(0,1) distribution within a few correlation times (~1 hr for tau = 20 min),
+## which is negligible against the multi-day integration.
+## stuck is set to 1 by boundary_stick when a particle is frozen at the boundary.
+VenusParticle = Particle.add_variable([
+                Variable("u_conv", dtype=np.float32, initial=0.0, to_write=True),
+                Variable("stuck", dtype=np.int32, initial=0, to_write=True),
+])
 
 # %%
-def CheckOutOfBounds(particle, fieldset, time):
-    if particle.state == StatusCode.ErrorOutOfBounds:
-        particle.delete()
+## Custom particle class for Venus Aerobot simulations.
+## w_bal is the vertical velocity of the balloon (m/s) and v_bal the current
+## balloon volume (m^3), both starting at 0. u_conv and stuck are as in VenusParticle.
+BalloonParticle = Particle.add_variable([
+                Variable("w_bal", dtype=np.float32, initial=0.0, to_write=True),
+                Variable("v_bal", dtype=np.float32, initial=0.0, to_write=True),
+                Variable("u_conv", dtype=np.float32, initial=0.0, to_write=True),
+                Variable("stuck", dtype=np.int32, initial=0, to_write=True),
+])
 
 # %%
-def boundary_stick(particle, fieldset, time):
+def CheckOutOfBounds(particles, fieldset):
+    state = np.asarray(particles.state)
+    particles.state = np.where(state == StatusCode.ErrorOutOfBounds,
+                               StatusCode.Delete, state)
+
+# %%
+def boundary_stick(particles, fieldset):
     """ Freeze particles that leave the domain (e.g. over the pole) at their
-        last in-bounds position instead of crashing the simulation. """
-    if particle.state == StatusCode.ErrorOutOfBounds:
-        particle_dlon = 0.0
-        particle_dlat = 0.0
-        particle_ddepth = 0.0
-        particle.stuck = 1
-        particle.state = StatusCode.Success
+        last position instead of crashing the simulation. """
+    oob = np.asarray(particles.state) == StatusCode.ErrorOutOfBounds
+    particles.dx = np.where(oob, 0.0, np.asarray(particles.dx))
+    particles.dy = np.where(oob, 0.0, np.asarray(particles.dy))
+    particles.dz = np.where(oob, 0.0, np.asarray(particles.dz))
+    particles.stuck = np.where(oob, 1, np.asarray(particles.stuck))
+    particles.state = np.where(oob, StatusCode.Success, np.asarray(particles.state))
 
 # %%
-def periodicBC(particle, fieldset, time):
-    if particle.lon < fieldset.halo_west:
-        particle_dlon += fieldset.halo_east - fieldset.halo_west
-    elif particle.lon > fieldset.halo_east:
-        particle_dlon -= fieldset.halo_east - fieldset.halo_west
+def periodicBC(particles, fieldset):
+    lon_min = fieldset.lon_min
+    particles.x = np.mod(np.asarray(particles.x) - lon_min, fieldset.lon_span) + lon_min
 
 # %%
-def smagdiff(particle, fieldset, time):
+def polarBC(particles, fieldset):
+    lat = np.asarray(particles.y)
+    lon = np.asarray(particles.x)
+    lon_min, lon_span = fieldset.lon_min, fieldset.lon_span
+    lat_max, lat_min = fieldset.lat_max, fieldset.lat_min
+
+    north = lat > lat_max
+    south = lat < lat_min
+
+    lat = np.where(north, 180.0 - lat, lat)
+    lat = np.where(south, -180.0 - lat, lat)
+    lon = np.where(north | south, np.mod(lon - lon_min + 180.0, lon_span) + lon_min, lon)
+
+    particles.y = lat
+    particles.x = lon
+
+# %%
+def smagdiff(particles, fieldset):
     """ Smagorinsky horizontal diffusion scheme adapted from
         https://oceanparcels.org/tutorials/advanced/smagorinsky_diffusion.html
+        Needs 'cell_areas' Field on the fieldset (area in m^2).
     """
     dx = 0.01
     # gradients are computed by using a local central difference.
-    updx, vpdx = fieldset.UV[time, particle.depth, particle.lat, particle.lon + dx]
-    umdx, vmdx = fieldset.UV[time, particle.depth, particle.lat, particle.lon - dx]
-    updy, vpdy = fieldset.UV[time, particle.depth, particle.lat + dx, particle.lon]
-    umdy, vmdy = fieldset.UV[time, particle.depth, particle.lat - dx, particle.lon]
+    updx, vpdx = fieldset.UV[particles.t, particles.z, particles.y, particles.x + dx, particles]
+    umdx, vmdx = fieldset.UV[particles.t, particles.z, particles.y, particles.x - dx, particles]
+    updy, vpdy = fieldset.UV[particles.t, particles.z, particles.y + dx, particles.x, particles]
+    umdy, vmdy = fieldset.UV[particles.t, particles.z, particles.y - dx, particles.x, particles]
 
     dudx = (updx - umdx) / (2 * dx)
     dudy = (updy - umdy) / (2 * dx)
@@ -72,23 +84,20 @@ def smagdiff(particle, fieldset, time):
     dvdx = (vpdx - vmdx) / (2 * dx)
     dvdy = (vpdy - vmdy) / (2 * dx)
 
-    A = fieldset.cell_areas[time, 0, particle.lat, particle.lon]
-    sq_deg_to_sq_m = (1852 * 60) ** 2 * math.cos(particle.lat * math.pi / 180)
+    A = fieldset.cell_areas[particles.t, particles.z, particles.y, particles.x, particles]
+    deg2m = fieldset.UV.grid.deg2m
+    sq_deg_to_sq_m = (deg2m ** 2) * np.cos(np.asarray(particles.y) * np.pi / 180)
     A = A / sq_deg_to_sq_m
-    Kh = fieldset.Cs * A * math.sqrt(dudx**2 + 0.5 * (dudy + dvdx) ** 2 + dvdy**2)
+    Kh = fieldset.Cs * A * np.sqrt(dudx**2 + 0.5 * (dudy + dvdx) ** 2 + dvdy**2)
 
-    dlat = parcels.ParcelsRandom.normalvariate(0.0, 1.0) * math.sqrt(
-        2 * math.fabs(particle.dt) * Kh
-    )
-    dlon = parcels.ParcelsRandom.normalvariate(0.0, 1.0) * math.sqrt(
-        2 * math.fabs(particle.dt) * Kh
-    )
+    dlat = np.random.normal(0.0, 1.0, size=np.asarray(particles.y).shape) * np.sqrt(2 * np.fabs(particles.dt) * Kh)
+    dlon = np.random.normal(0.0, 1.0, size=np.asarray(particles.y).shape) * np.sqrt(2 * np.fabs(particles.dt) * Kh)
 
-    particle_dlat += dlat
-    particle_dlon += dlon
+    particles.dy += dlat
+    particles.dx += dlon
 
 # %%
-def convection_ou(particle, fieldset, time):
+def convection_ou(particles, fieldset):
     """ Convective vertical-wind kernel: an Ornstein-Uhlenbeck / AR(1) red-noise
         process calibrated to the Vega balloon anemometer data (see
         vega_convection.py). Each parcel carries a dimensionless, zero-mean,
@@ -107,40 +116,39 @@ def convection_ou(particle, fieldset, time):
         the large-scale W from the advection kernel; it does not replace it. The
         update is exact for any dt, so no sub-stepping is needed.
     """
-    z = particle.depth
-    env = 0.0
-    if z > fieldset.conv_z_lo - fieldset.conv_edge and z < fieldset.conv_z_hi + fieldset.conv_edge:
-        if z < fieldset.conv_z_lo:
-            env = (z - (fieldset.conv_z_lo - fieldset.conv_edge)) / fieldset.conv_edge
-        elif z > fieldset.conv_z_hi:
-            env = ((fieldset.conv_z_hi + fieldset.conv_edge) - z) / fieldset.conv_edge
-        else:
-            env = 1.0
+    z = np.asarray(particles.z)
+    lo, hi, edge = fieldset.conv_z_lo, fieldset.conv_z_hi, fieldset.conv_edge
+    # trapezoidal envelope: 1 in [lo,hi], linear ramp over `edge` at each side, 0 outside
+    env = np.clip(np.minimum((z - (lo - edge)) / edge, ((hi + edge) - z)/ edge), 0.0, 1.0)
+    active = env > 0.0
 
-    if env > 0.0:
-        a = math.exp(-math.fabs(particle.dt) / fieldset.conv_tau)
-        g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
-        particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
-        particle_ddepth += fieldset.conv_sigma * env * particle.u_conv * particle.dt
-        
+    a = np.exp(-np.fabs(particles.dt) / fieldset.conv_tau)
+    g = np.random.normal(0.0, 1.0, size=z.shape)
+    u_new = a * np.asarray(particles.u_conv) + np.sqrt(1.0 - a * a) * g
+    particles.u_conv = np.where(active, u_new, np.asarray(particles.u_conv))
+    particles.dz += np.where(active,
+                             fieldset.conv_sigma * env * np.asarray(particles.u_conv) * particles.dt,
+                             0.0)
 # %%
-def surface_bounce(particle, fieldset, time):
-     if particle.state == StatusCode.ErrorThroughSurface:
-          particle_ddepth = 0.0
-          particle.state = StatusCode.Success
+def surface_bounce(particles, fieldset):
+    """ Particles pushed below the lowest model level are put back on it. """
+    hit = np.asarray(particles.state) == StatusCode.ErrorThroughSurface
+    particles.dz = np.where(hit, fieldset.W.grid.depth[0] - np.asarray(particles.z),
+                            np.asarray(particles.dz))
+    particles.state = np.where(hit, StatusCode.Success, np.asarray(particles.state))
 
 # %%
-def balloon_vertical(particle, fieldset, time):
-    """ Balloon vertical-wind kernel: updates the balloon's vertical velocity 
+def balloon_vertical(particles, fieldset):
+    """ Balloon vertical-wind kernel: updates the balloon's vertical velocity
         and displacement using the equations for net force, drag and buoyancy
         from the prototype Venus Aerobot paper by Izraelevitz et al:
-        
+
             (m_total + m_virtual) * d2z/dt2 = rho_atm * V * g  -  m_total * g  -  F_drag (Eq. 1)
             F_drag = 0.5 * rho_atm * C_D * A_ref * v^2 * v_hat (Eq. 11)
             m_virtual = C_m * rho_atm * V (Eq. 13)
 
-        In the outer loop, rho_atm and w_atm are interpolated at the particle position,
-        and the Ohrnstein-Uhlenbeck process from convection_ou is used to directly advance
+        In the outer step, rho_atm and w_atm are interpolated at the particle position,
+        and the Ornstein-Uhlenbeck process from convection_ou is used to directly advance
         w_atm, the vertical atmospheric wind.
 
         In the inner loop, the balloon's volume and virtual mass are calculated at each
@@ -148,66 +156,64 @@ def balloon_vertical(particle, fieldset, time):
         by a semi-exponential update similar to the OU process in convection_ou:
 
             a_buoy = (rho*V*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual)
-            w_eq = a_buoy * tau_vertical 
-            w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical)
-        
-        Additionally, a local gradient is used to extrapolate rho_atm at each substep. 
-        Since convection_ou is restructured in this kernel, it should not be added to kernel list 
-        in run_venus_simulation.py when using BalloonParticle.
+            w_eq = a_buoy * tau_vertical
+            w_rel = w_eq + (w_rel_old - w_eq)*exp(-|dt_inner| / tau_vertical)
+
+        Additionally, a local gradient is used to extrapolate rho_atm at each substep.
+        Since convection_ou is restructured in this kernel, it should not be added to the
+        kernel list in run_venus_simulation.py when using BalloonParticle.
+
+        All particles are updated together as arrays; the substep loop runs over time,
+        not over particles.
         """
-    displacement, i = 0.0, 0.0
-    dt_inner = particle.dt / 60
-    rho0 = fieldset.RHO[time, particle.depth, particle.lat, particle.lon]
-    w_atm = fieldset.W[time, particle.depth, particle.lat, particle.lon]
+    n_inner = 60
+    dt = np.asarray(particles.dt)
+    dt_inner = dt / n_inner
+    z = np.asarray(particles.z)
+    rho0 = np.asarray(fieldset.RHO[particles.t, particles.z, particles.y, particles.x, particles])
+    w_atm = np.asarray(fieldset.W[particles.t, particles.z, particles.y, particles.x, particles])
     rho_atm = rho0
-    
+
     # Compute density gradient:
-    rho1 = fieldset.RHO[time, particle.depth + 200, particle.lat, particle.lon] 
-    rho2 = fieldset.RHO[time, particle.depth - 200, particle.lat, particle.lon]     
-    z1 = particle.depth + 200 
-    z2 = particle.depth - 200
-    slope = (rho1 - rho2)/(z1 - z2) # d_rho/dz
+    rho1 = np.asarray(fieldset.RHO[particles.t, z + 200, particles.y, particles.x, particles])
+    rho2 = np.asarray(fieldset.RHO[particles.t, z - 200, particles.y, particles.x, particles])
+    slope = (rho1 - rho2) / 400.0 # d_rho/dz
 
-    # Restructure convection_ou to add directly to w_atm:
-    z = particle.depth 
-    env = 0.0
-    if z > fieldset.conv_z_lo - fieldset.conv_edge and z < fieldset.conv_z_hi + fieldset.conv_edge:
-        if z < fieldset.conv_z_lo:
-            env = (z - (fieldset.conv_z_lo - fieldset.conv_edge)) / fieldset.conv_edge
-        elif z > fieldset.conv_z_hi:
-            env = ((fieldset.conv_z_hi + fieldset.conv_edge) - z) / fieldset.conv_edge
-        else:
-            env = 1.0
-
-    if env > 0.0:
-        a = math.exp(-math.fabs(particle.dt) / fieldset.conv_tau)
-        g = parcels.ParcelsRandom.normalvariate(0.0, 1.0)
-        particle.u_conv = a * particle.u_conv + math.sqrt(1.0 - a * a) * g
-        w_atm += fieldset.conv_sigma * env * particle.u_conv 
+    # Convective OU noise (as in convection_ou), added directly to w_atm:
+    lo, hi, edge = fieldset.conv_z_lo, fieldset.conv_z_hi, fieldset.conv_edge
+    env = np.clip(np.minimum((z - (lo - edge)) / edge, ((hi + edge) - z) / edge), 0.0, 1.0)
+    active = env > 0.0
+    a = np.exp(-np.fabs(dt) / fieldset.conv_tau)
+    g = np.random.normal(0.0, 1.0, size=z.shape)
+    u_conv = np.asarray(particles.u_conv)
+    u_conv = np.where(active, a * u_conv + np.sqrt(1.0 - a * a) * g, u_conv)
+    particles.u_conv = u_conv
+    w_atm = w_atm + fieldset.conv_sigma * env * u_conv
 
     # Inner sub-step loop:
-    while i < 60:
-        i += 1
+    displacement = np.zeros_like(rho0)
+    w_bal = np.asarray(particles.w_bal, dtype=np.float64)
+    for _ in range(n_inner):
         # Compute volume & virtual mass:
-        Vol = 10.86 * fieldset.m_gas_ZP / rho_atm # Displaced volume [m^3] 
-        if Vol > fieldset.V_infl: # named Vol instead of V because of JITParticle errors
-            Vol = fieldset.V_infl # Caps volume at maximum inflation 
+        Vol = np.minimum(10.86 * fieldset.m_gas_ZP / rho_atm, fieldset.V_infl) # Displaced volume [m^3], capped at full inflation
         m_virtual = fieldset.C_m * rho_atm * Vol # Apparent extra mass [kg] from Eq. (13)
 
         # Compute forces:
-        w_rel_old = particle.w_bal - w_atm # Relative velocity [m/s]
-        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * math.fabs(w_rel_old)) # Drag relaxation [s]
-        
+        w_rel_old = w_bal - w_atm # Relative velocity [m/s]
+        tau_vertical = (fieldset.m_total + m_virtual) / (0.5 * rho_atm * fieldset.C_D_top * fieldset.A_top * np.fabs(w_rel_old)) # Drag relaxation [s]
+
         # Update relative velocity:
         a_buoy = (rho_atm*Vol*fieldset.g_Venus - fieldset.m_total*fieldset.g_Venus) / (fieldset.m_total + m_virtual) # Acceleration due to buoyancy [m/s^2]
         w_eq = a_buoy * tau_vertical # Equilibrium velocity [m/s]
-        w_rel = w_eq + (w_rel_old - w_eq)*math.exp(-math.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
+        w_rel = w_eq + (w_rel_old - w_eq)*np.exp(-np.fabs(dt_inner) / tau_vertical) # Relative velocity [m/s]
 
         # Update vertical velocity, displacement and atmospheric density:
-        particle.w_bal = w_rel + w_atm # Balloon's vertical velocity [m/s]
-        displacement += particle.w_bal*dt_inner # Accumulates displacement [m]
+        w_bal = w_rel + w_atm # Balloon's vertical velocity [m/s]
+        displacement += w_bal*dt_inner # Accumulates displacement [m]
         rho_atm = rho0 + slope*displacement # Extrapolates atmospheric density [kg/m^3]
-        particle.v_bal = Vol # Tracks changes in volume
-        
+
+    particles.w_bal = w_bal
+    particles.v_bal = Vol # Volume at the start of the last substep
     # Update altitude position [m]:
-    particle_ddepth += displacement 
+    particles.dz += displacement
+# %%

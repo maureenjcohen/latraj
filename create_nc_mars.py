@@ -1,5 +1,5 @@
 """" Script to extract data and metadata from the Mars PCM, OU version outputs, reformat them as needed by
-    the Parcels package, and write them to a new batch of netcdf files for trajectory analysis.
+    the Parcels V4 package, and write them to a new batch of netcdf files for trajectory analysis.
     
     Notes FOR MARS:
         1. Time axis is in Martian sols (88775 seconds each).
@@ -9,12 +9,15 @@
         1. Parcels is mostly used for ocean data, so the vertical coordinate is depth in meters.
         2. Parcels only parses certain date formats. This script rewrites the time coordinate to use
         a format the package accepts.
-        """
+"""
+
 # %%
 import numpy as np
 import netCDF4 as nc
-from datetime import datetime, timedelta
+import xarray as xr
 import importlib
+import parcels._sgrid as sgrid
+from fieldset_tools import agrid_sgrid_metadata, add_zonal_halo
 import config  # per-run settings; copy config_example.py -> config.py
 
 # %%
@@ -31,13 +34,10 @@ rho = config.RHO                  # Density of atmosphere in kg/m3 (for Pa/s -> 
 g_constant = config.G_CONSTANT    # Gravitational constant of planet in m/s2
 # If your atmospheric density varies significantly within the model domain,
 # you will have to get a density cube.
-# The model level heights below are a fixed property of the Mars PCM output,
-# not a per-run setting, so they stay here rather than in config.py.
 # The Mars PCM 'level' dimension holds sigma coordinates (pressure / surface
 # pressure). We convert them to log-pressure heights once, using the standard
 # scale-height relation h = -H * ln(sigma) with H = 11 km. The sigma values
-# below were read from a control output (level dimension) and hardcoded, the
-# same way the Venus heights are hardcoded above in create_nc_venus.py.
+# below were read from a control output (level dimension) and hardcoded.
 scale_height = 11e3  # Mars atmospheric scale height H in m
 MARS_SOL_S = 88775.0  # length of a Mars sol in seconds (PCM 'time' is in sols)
 sigma = np.array([9.99500036e-01, 9.98395443e-01, 9.97060180e-01, 9.95446920e-01,
@@ -62,69 +62,6 @@ heights = -scale_height * np.log(sigma)
 # Heights of Mars model output in m (log-pressure, increasing = up)
 
 ### Functions for reorganising and reformatting LMD Planets simulation output
-# %%
-def make_file(ncout, udata, vdata, wdata, hghts, lats, lons,
-              n_times, time_len):
-    """ Fill an empty Dataset with the full run: all timesteps written to a
-        single netCDF file (time dimension = n_times) rather than one file per
-        step. udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes."""
-    # Create the dimensions of the new file, same as the old file
-    ncout.createDimension('time', n_times)
-    ncout.createDimension('height', len(hghts))
-    ncout.createDimension('lat', len(lats))
-    ncout.createDimension('lon', len(lons))
-
-    # Create variable to store longitudes
-    longitude = ncout.createVariable('Longitude', 'float32', ('lon',))
-    longitude.units = 'degrees_east'
-    longitude.axis = 'X'
-
-    # Create variable to store latitudes
-    latitude = ncout.createVariable('Latitude', 'float32', ('lat',))
-    latitude.units = 'degrees_north'
-    latitude.axis = 'Y'
-
-    # Create variable to store heights (not pressure levels)
-    height = ncout.createVariable('Height', 'float32', ('height',))
-    height.units = 'm'
-    height.axis = 'Z'
-    height.positive = 'up'
-
-    # Create variable to hold timestamps
-    time = ncout.createVariable('Time', 'float32', ('time',))
-    time.units = 'seconds since 1987-03-30 00:00:00'
-
-    # Now create the variables that will hold your wind data
-    # Note: W input data must be in m/s
-    uout = ncout.createVariable('U', 'float32', ('time', 'height', 'lat', 'lon'))
-    uout.units = 'm/s'
-    uout.interval_write = str(time_len)
-    uout[:,:,:,:] = udata
-
-    vout = ncout.createVariable('V', 'float32', ('time', 'height', 'lat', 'lon'))
-    vout.units = 'm/s'
-    vout.interval_write = str(time_len)
-    vout[:,:,:,:] = vdata
-
-    wout = ncout.createVariable('W', 'float32', ('time', 'height', 'lat', 'lon'))
-    wout.units = 'm/s'
-    wout.interval_write = str(time_len)
-    wout[:,:,:,:] = wdata
-
-    # Fill in the dimensions with the arrays from the original sim files
-    latitude[:] = lats
-    longitude[:] = lons
-    height[:] = hghts
-
-    # Now do some funky time stuff. Build one timestamp per step, evenly spaced
-    # by time_len seconds and counted from the start date (index-based, so the
-    # series always begins at zero regardless of where t_select starts).
-    dates = [datetime(1987, 3, 30) + timedelta(seconds=int(step * time_len))
-             for step in range(n_times)]
-    time[:] = nc.date2num(dates, time.units)
-    print('File written for', n_times, 'timesteps:',
-          time[0], '->', time[-1], time.units)
-
  # %%
 def extract_metadata(ncfile):
     """ Input a netcdf4 file and extract the metadata that will be used
@@ -165,7 +102,7 @@ def process_data(windcube, windunits, windtype):
         winddata = windcube[...]
     elif windtype=='U':
         print('Processing eastward wind')
-        winddata = windcube[...]  # Mars is prograde: no U negation, no lon flip
+        winddata = windcube[...] 
     else:
         print('Invalid wind type, must be U, V, or W')
 
@@ -186,7 +123,36 @@ def selector(ncfile, inputtimes, inputheights, trange=(0,None), hrange=(0,None))
     return ucube, vcube, wcube, select_times, select_heights
 
 # %%
-def run_preprocess(inputfile, savedir, testname):
+def build_dataset(udata, vdata, wdata, hghts, lats, lons, n_times, time_len, n_cells):
+    """ Create xarray Dataset from winds and coords. Attach SGRID metadata for v4's 
+        FieldSet.from_sgrid_conventions.
+        
+        Coord names must be equal to their dims. Vertical coord must be named depth 
+        (hardcoded in v4) even if it indexes the height dim.                    """
+    
+    base = np.datetime64('1987-03-30T00:00:00')
+    times = base + (np.arange(n_times) * time_len).astype('int64').astype('timedelta64[s]')
+
+    ds = xr.Dataset(
+        data_vars={
+            "U": (["time","height","lat","lon"], np.asarray(udata, dtype="float32"), {"units": "m/s"}),
+            "V": (["time","height","lat","lon"], np.asarray(vdata, dtype="float32"), {"units": "m/s"}),
+            "W": (["time","height","lat","lon"], np.asarray(wdata, dtype="float32"), {"units": "m/s"}),
+        },
+        coords={
+            "lon": ("lon", np.asarray(lons, dtype="float32"), {"axis": "X", "units": "degrees_east"}),
+            "lat": ("lat", np.asarray(lats, dtype="float32"), {"axis": "Y", "units": "degrees_north"}),
+            "depth": ("height", np.asarray(hghts, dtype="float32"), {"axis": "Z", "units": "m", "positive":"up"}),
+            "time": ("time", times, {"axis": "T"})
+        }
+    )
+    ds = ds.sortby("lat")
+    ds = add_zonal_halo(ds, n_cells)
+    ds = sgrid._attach_sgrid_metadata(ds, agrid_sgrid_metadata()) # Parcels4 helper function that attaches metadata to grid
+    return ds 
+
+# %%
+def run_preprocess(inputfile, savedir, testname, halo_cells):
 
     """ Input the path to a file containing LMD Planets simulation data
         Input directory into which to save preprocessed files for Parcels
@@ -200,19 +166,21 @@ def run_preprocess(inputfile, savedir, testname):
     v_data = process_data(vcube, 'm/s', 'V')
     w_data = process_data(wcube, 'm/s', 'W')
 
-    # Write every timestep into a single netCDF file (one file per run),
-    # rather than one file per timestep.
-    ncout = nc.Dataset(savedir + '/' + testname + '.nc', 'w', format='NETCDF4')
-    make_file(ncout, u_data, v_data, w_data, selected_heights,
-              lats, lons, len(selected_times), t_interval)
-    ncout.close(); del ncout
+    ds = build_dataset(u_data, v_data, w_data, selected_heights,
+                       lats, lons, len(selected_times), t_interval, halo_cells)
+    
+    outpath = savedir + '/' + testname + '.nc'
+    ds.to_netcdf(outpath,
+                 encoding={"time": {"units": "seconds since 1987-03-30 00:00:00"}})
+    print('File written: ', outpath, '| times', str(ds.time.values[0]),
+        '->', str(ds.time.values[-1]))
 
 # %%
 if __name__ == "__main__":
 
     ds = nc.Dataset(fn)
 
-    run_preprocess(ds, outputdir, experiment_name)
+    run_preprocess(inputfile=ds, savedir=outputdir, testname=experiment_name, halo_cells=3)
     
 
 # %%

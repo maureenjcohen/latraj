@@ -3,9 +3,28 @@ import pytest
 import numpy as np
 import math
 import xarray as xr
+import parcels._sgrid as sgrid
 import config
 from custom_kernels import convection_ou, balloon_vertical, VenusParticle, BalloonParticle
-from parcels import FieldSet, ParticleSet, ScipyParticle, Variable
+from fieldset_tools import agrid_sgrid_metadata
+from parcels import FieldSet, ParticleSet, SphericalMesh
+
+def toy_fieldset(fields, lon, lat, alt):
+    """ Build a time-constant Parcels v4 FieldSet from 3-D (alt, lat, lon) arrays,
+        using the same SGRID A-grid layout as the preprocessed model files. """
+    data_vars = {name: (["time", "height", "lat", "lon"], np.asarray(arr, dtype=np.float32)[None])
+                 for name, arr in fields.items()}
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            "lon": ("lon", lon, {"axis": "X", "units": "degrees_east"}),
+            "lat": ("lat", lat, {"axis": "Y", "units": "degrees_north"}),
+            "depth": ("height", alt, {"axis": "Z", "units": "m", "positive": "up"}),
+            "time": ("time", np.array([np.datetime64("1987-03-30T00:00:00", "ns")]), {"axis": "T"}),
+        },
+    )
+    ds = sgrid._attach_sgrid_metadata(ds, agrid_sgrid_metadata())
+    return FieldSet.from_sgrid_conventions(ds, mesh=SphericalMesh())
 
 @pytest.fixture
 def convection_fieldset():
@@ -17,13 +36,12 @@ def convection_fieldset():
     V = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     W = np.zeros((alt.size, lat.size, lon.size), dtype=np.float32)
     # 3-D wind field with all winds 0 m/s
-    fieldset = FieldSet.from_data({"U": U, "V": V, "W": W},
-                                {"lon": lon, "lat": lat, "depth": alt})
-    fieldset.add_constant("conv_sigma", 0.6)
-    fieldset.add_constant("conv_tau", 1200.0)
-    fieldset.add_constant("conv_z_lo", 48000.0)
-    fieldset.add_constant("conv_z_hi", 55000.0)
-    fieldset.add_constant("conv_edge", 2000.0)
+    fieldset = toy_fieldset({"U": U, "V": V, "W": W}, lon, lat, alt)
+    fieldset.add_context("conv_sigma", 0.6)
+    fieldset.add_context("conv_tau", 1200.0)
+    fieldset.add_context("conv_z_lo", 48000.0)
+    fieldset.add_context("conv_z_hi", 55000.0)
+    fieldset.add_context("conv_edge", 2000.0)
     # Convection parameters
     return fieldset
 
@@ -38,22 +56,21 @@ def balloon_fieldset():
     W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32) 
     RHO = np.full((alt.size, lat.size, lon.size), 2.0, dtype=np.float32)
     # 3-D wind field with most winds 0 m/s
-    fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
-                                {"lon": lon, "lat": lat, "depth": alt})
-    fieldset.add_constant("conv_sigma", 0.6)
-    fieldset.add_constant("conv_tau", 1200.0)
-    fieldset.add_constant("conv_z_lo", 48000.0)
-    fieldset.add_constant("conv_z_hi", 55000.0)
-    fieldset.add_constant("conv_edge", 2000.0)
+    fieldset = toy_fieldset({"U": U, "V": V, "W": W, 'RHO': RHO}, lon, lat, alt)
+    fieldset.add_context("conv_sigma", 0.6)
+    fieldset.add_context("conv_tau", 1200.0)
+    fieldset.add_context("conv_z_lo", 48000.0)
+    fieldset.add_context("conv_z_hi", 55000.0)
+    fieldset.add_context("conv_edge", 2000.0)
     # Convection parameters
-    fieldset.add_constant("C_D_top", 0.8) # Drag coefficient for vertical motion
-    fieldset.add_constant("C_D_side", 1.0) # Drag coefficient for horizontal motion
-    fieldset.add_constant("C_m", 0.2) # Virtual mass coefficient
-    fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
-    fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
-    fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
-    fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
-    fieldset.add_constant("V_infl", 72.6) # Maximum volume [m^3]
+    fieldset.add_context("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_context("C_D_side", 1.0) # Drag coefficient for horizontal motion
+    fieldset.add_context("C_m", 0.2) # Virtual mass coefficient
+    fieldset.add_context("A_top", 19.6) # Upper area [m^2]
+    fieldset.add_context("A_side", 22.9) # Silhouette area of profile [m^2]
+    fieldset.add_context("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
+    fieldset.add_context("m_total", 62) # Total mass: helium + envelopes + payload [kg]
+    fieldset.add_context("V_infl", 72.6) # Maximum volume [m^3]
     # Balloon parameters
     return fieldset
 
@@ -70,22 +87,21 @@ def balloon_fieldset_variable_rho():
     W = np.full((alt.size, lat.size, lon.size), 0.5, dtype=np.float32)
     RHO = np.tile(rho_decay[:, np.newaxis, np.newaxis], (1, lat.size, lon.size))
     # 3-D wind field with most winds 0 m/s
-    fieldset = FieldSet.from_data({"U": U, "V": V, "W": W, 'RHO': RHO},
-                                {"lon": lon, "lat": lat, "depth": alt})
-    fieldset.add_constant("conv_sigma", 0)
-    fieldset.add_constant("conv_tau", 1200.0)
-    fieldset.add_constant("conv_z_lo", 48000.0)
-    fieldset.add_constant("conv_z_hi", 55000.0)
-    fieldset.add_constant("conv_edge", 2000.0)
+    fieldset = toy_fieldset({"U": U, "V": V, "W": W, 'RHO': RHO}, lon, lat, alt)
+    fieldset.add_context("conv_sigma", 0)
+    fieldset.add_context("conv_tau", 1200.0)
+    fieldset.add_context("conv_z_lo", 48000.0)
+    fieldset.add_context("conv_z_hi", 55000.0)
+    fieldset.add_context("conv_edge", 2000.0)
     # Convection parameters
-    fieldset.add_constant("C_D_top", 0.8) # Drag coefficient for vertical motion
-    fieldset.add_constant("C_D_side", 1.0) # Drag coefficient for horizontal motion
-    fieldset.add_constant("C_m", 0.2) # Virtual mass coefficient
-    fieldset.add_constant("A_top", 19.6) # Upper area [m^2]
-    fieldset.add_constant("A_side", 22.9) # Silhouette area of profile [m^2]
-    fieldset.add_constant("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
-    fieldset.add_constant("m_total", 62) # Total mass: helium + envelopes + payload [kg]
-    fieldset.add_constant("V_infl", 72.6) # Maximum volume [m^3]
+    fieldset.add_context("C_D_top", 0.8) # Drag coefficient for vertical motion
+    fieldset.add_context("C_D_side", 1.0) # Drag coefficient for horizontal motion
+    fieldset.add_context("C_m", 0.2) # Virtual mass coefficient
+    fieldset.add_context("A_top", 19.6) # Upper area [m^2]
+    fieldset.add_context("A_side", 22.9) # Silhouette area of profile [m^2]
+    fieldset.add_context("g_Venus", 8.87) # Venus gravitational acceleration [m/s^2]
+    fieldset.add_context("m_total", 62) # Total mass: helium + envelopes + payload [kg]
+    fieldset.add_context("V_infl", 72.6) # Maximum volume [m^3]
     # Balloon parameters
     return fieldset
 
@@ -100,21 +116,21 @@ def test_no_convection_outside_envelope(convection_fieldset, z):
         if particle is outside the vertical range where convection
         occurs """
     x0, y0, z0 = 6.1, 6.2, z # Initial particle location - cycle through z values
-    pset = ParticleSet(convection_fieldset, pclass=VenusParticle, lon=x0, lat=y0, depth=z0)
+    pset = ParticleSet(convection_fieldset, pclass=VenusParticle, x=x0, y=y0, z=z0)
 
     pset.execute(convection_ou, runtime=4, dt=1) # Execute only convection_ou kernel
-    assert pset.depth == pytest.approx(z0) # Check that final particle depth is same as initial
+    assert pset.z == pytest.approx(z0) # Check that final particle depth is same as initial
 
 def test_conv_distribution_stationary(convection_fieldset):
     """ Test that the mean of u_conv is zero and the variance
         is one over a reasonable sample of particles """
     n_particles = 5000 # Run an ensemble of particles to get a statistical sample
     tau = 1200.0 # Decorrelation time for convection - sim length should be much longer than this
-    parcels.ParcelsRandom.seed(1234) # Set random seed for reproducibility
+    np.random.seed(1234) # Set random seed for reproducibility
     pset = ParticleSet(convection_fieldset, pclass=VenusParticle, 
-                       lon=np.full(n_particles, 6.1), 
-                       lat=np.full(n_particles, 6.2), 
-                       depth=np.full(n_particles, 52000.0)) # Initial location inside envelope
+                       x=np.full(n_particles, 6.1),
+                       y=np.full(n_particles, 6.2),
+                       z=np.full(n_particles, 52000.0)) # Initial location inside envelope
 
     pset.execute(convection_ou, runtime=10 * tau, dt=600) # Execute only convection_ou kernel
 
@@ -127,8 +143,8 @@ def test_balloon_tracks_watm(balloon_fieldset):
         not double-count the vertical wind """
     tau = 1200.0 
     w_atm = balloon_fieldset.W[0, 49000, 20, 90]
-    balloon_fieldset.add_constant('m_gas_ZP', (balloon_fieldset.m_total / 10.86))
-    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
+    balloon_fieldset.add_context('m_gas_ZP', (balloon_fieldset.m_total / 10.86))
+    pset = ParticleSet(balloon_fieldset, pclass=BalloonParticle, x=90, y=20, z=49000)
 
     pset.execute(balloon_vertical, runtime=10*tau, dt=600)
     assert pset.w_bal == pytest.approx(w_atm, rel=0.01)
@@ -138,11 +154,11 @@ def test_ceiling_behaviour(balloon_fieldset_variable_rho):
         V = V_infl at the altitude where 
         m_total = rho_atm*V_infl """
     tau = 1200.0
-    balloon_fieldset_variable_rho.add_constant('m_gas_ZP', 5.7)
-    pset = ParticleSet(balloon_fieldset_variable_rho, pclass=BalloonParticle, lon=90, lat=20, depth=49000)
+    balloon_fieldset_variable_rho.add_context('m_gas_ZP', 5.7)
+    pset = ParticleSet(balloon_fieldset_variable_rho, pclass=BalloonParticle, x=90, y=20, z=49000)
 
     pset.execute(balloon_vertical, runtime=100*tau, dt=600)
-    final_depth = pset.depth[0]
+    final_depth = pset.z[0]
     rho_final = balloon_fieldset_variable_rho.RHO[0, final_depth, 20, 90]
     assert rho_final*balloon_fieldset_variable_rho.V_infl == pytest.approx(balloon_fieldset_variable_rho.m_total, rel=0.05)
     assert pset.w_bal == pytest.approx(0, abs=0.01)

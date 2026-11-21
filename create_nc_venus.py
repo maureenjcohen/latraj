@@ -1,5 +1,5 @@
 """" Script to extract data and metadata from Venus PCM outputs, reformat them as needed by
-    the Parcels package, and write them to a new batch of netcdf files for trajectory analysis.
+    the Parcels v4 package, and write them to a new batch of netcdf files for trajectory analysis.
     
     Notes FOR VENUS:
         1. VENUS ROTATES BACKWARDS. The VPCM outputs have a flipped longitude axis that runs from
@@ -23,8 +23,10 @@
 # %%
 import numpy as np
 import netCDF4 as nc
-from datetime import datetime, timedelta
+import xarray as xr
 import importlib
+import parcels._sgrid as sgrid
+from fieldset_tools import agrid_sgrid_metadata, add_zonal_halo
 import config  # per-run settings; copy config_example.py -> config.py
 
 # %%
@@ -111,80 +113,49 @@ SCALAR_FIELDS = {
 
 ### Functions for reorganising and reformatting LMD Planets simulation output
 # %%
-def make_file(ncout, udata, vdata, wdata, hghts, lats, lons,
-              n_times, time_len, scalars=SCALAR_FIELDS):
-    """ Fill an empty Dataset with the full run: all timesteps written to a
-        single netCDF file (time dimension = n_times) rather than one file per
-        step. udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes.
+def build_dataset(udata, vdata, wdata, hghts, lats, lons,
+                  n_times, time_len, n_cells, scalars=None):
+    """ Create an xarray Dataset holding the full run (all timesteps) with the
+        SGRID metadata needed by Parcels v4's FieldSet.from_sgrid_conventions.
+        udata/vdata/wdata are the full 4D (time, height, lat, lon) cubes.
 
         scalars is an optional {name: (data, units)} dict of extra 4D fields
-        (temperature, pressure, density) written on the same dims as the winds."""
-    # Create the dimensions of the new file, same as the old file
-    ncout.createDimension('time', n_times)
-    ncout.createDimension('height', len(hghts))
-    ncout.createDimension('lat', len(lats))
-    ncout.createDimension('lon', len(lons))
+        (temperature, pressure, density) written on the same dims as the winds.
 
-    # Create variable to store longitudes
-    longitude = ncout.createVariable('Longitude', 'float32', ('lon',))
-    longitude.units = 'degrees_east'
-    longitude.axis = 'X'
+        Coord names must equal their dims, except the vertical coordinate, which
+        Parcels v4 requires to be named depth even though it indexes the height
+        dim. Timestamps are evenly spaced by time_len seconds from the start date
+        (index-based, so the series always begins at zero regardless of where
+        t_select starts). A zonal halo of n_cells is added on each side so that
+        particles can be wrapped in longitude. """
+    base = np.datetime64('1987-03-30T00:00:00')
+    times = base + (np.arange(n_times) * time_len).astype('int64').astype('timedelta64[s]')
 
-    # Create variable to store latitudes
-    latitude = ncout.createVariable('Latitude', 'float32', ('lat',))
-    latitude.units = 'degrees_north'
-    latitude.axis = 'Y'
-
-    # Create variable to store heights (not pressure levels)
-    height = ncout.createVariable('Height', 'float32', ('height',))
-    height.units = 'm'
-    height.axis = 'Z'
-    height.positive = 'up'
-
-    # Create variable to hold timestamps
-    time = ncout.createVariable('Time', 'float32', ('time',))
-    time.units = 'seconds since 1987-03-30 00:00:00'
-
-    # Now create the variables that will hold your wind data
-    # Note: W input data must be in m/s
-    uout = ncout.createVariable('U', 'float32', ('time', 'height', 'lat', 'lon'))
-    uout.units = 'm/s'
-    uout.interval_write = str(time_len)
-    uout[:,:,:,:] = udata
-
-    vout = ncout.createVariable('V', 'float32', ('time', 'height', 'lat', 'lon'))
-    vout.units = 'm/s'
-    vout.interval_write = str(time_len)
-    vout[:,:,:,:] = vdata
-
-    wout = ncout.createVariable('W', 'float32', ('time', 'height', 'lat', 'lon'))
-    wout.units = 'm/s'
-    wout.interval_write = str(time_len)
-    wout[:,:,:,:] = wdata
-
+    data_vars = {
+        "U": (["time","height","lat","lon"], np.asarray(udata, dtype="float32"), {"units": "m/s"}),
+        "V": (["time","height","lat","lon"], np.asarray(vdata, dtype="float32"), {"units": "m/s"}),
+        "W": (["time","height","lat","lon"], np.asarray(wdata, dtype="float32"), {"units": "m/s"}),
+    }
     # Extra scalar fields, on the same dims and the same reversed lon ordering as
     # the winds so Parcels reads them onto an identical grid.
     if scalars is None:
         scalars = {}
     for name, (data, units) in scalars.items():
-        sout = ncout.createVariable(name, 'float32', ('time', 'height', 'lat', 'lon'))
-        sout.units = units
-        sout.interval_write = str(time_len)
-        sout[:,:,:,:] = data
+        data_vars[name] = (["time","height","lat","lon"], np.asarray(data, dtype="float32"), {"units": units})
 
-    # Fill in the dimensions with the arrays from the original sim files
-    latitude[:] = lats
-    longitude[:] = lons
-    height[:] = hghts
-
-    # Now do some funky time stuff. Build one timestamp per step, evenly spaced
-    # by time_len seconds and counted from the start date (index-based, so the
-    # series always begins at zero regardless of where t_select starts).
-    dates = [datetime(1987, 3, 30) + timedelta(seconds=int(step * time_len))
-             for step in range(n_times)]
-    time[:] = nc.date2num(dates, time.units)
-    print('File written for', n_times, 'timesteps:',
-          time[0], '->', time[-1], time.units)
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            "lon": ("lon", np.asarray(lons, dtype="float32"), {"axis": "X", "units": "degrees_east"}),
+            "lat": ("lat", np.asarray(lats, dtype="float32"), {"axis": "Y", "units": "degrees_north"}),
+            "depth": ("height", np.asarray(hghts, dtype="float32"), {"axis": "Z", "units": "m", "positive": "up"}),
+            "time": ("time", times, {"axis": "T"})
+        }
+    )
+    ds = ds.sortby("lat")
+    ds = add_zonal_halo(ds, n_cells)
+    ds = sgrid._attach_sgrid_metadata(ds, agrid_sgrid_metadata())
+    return ds
 
  # %%
 def extract_metadata(ncfile):
@@ -267,7 +238,7 @@ def selector(ncfile, inputtimes, inputheights, trange=(0,None), hrange=(0,None))
     return ucube, vcube, wcube, scalar_cubes, select_times, select_heights
 
 # %%
-def run_preprocess(inputfile, savedir, testname):
+def run_preprocess(inputfile, savedir, testname, halo_cells=3):
 
     """ Input the path to a file containing LMD Planets simulation data
         Input directory into which to save preprocessed files for Parcels
@@ -291,12 +262,15 @@ def run_preprocess(inputfile, savedir, testname):
     scalar_data = {name: (process_scalar(cube, name), SCALAR_FIELDS[name][1])
                    for name, cube in scalar_cubes.items()}
 
-    # Write every timestep into a single netCDF file (one file per run),
-    # rather than one file per timestep.
-    ncout = nc.Dataset(savedir + '/' + testname + '.nc', 'w', format='NETCDF4')
-    make_file(ncout, u_data, v_data, w_data, selected_heights,
-              lats, lons, len(selected_times), t_interval, scalars=scalar_data)
-    ncout.close(); del ncout
+    # Write every timestep into a single netCDF file (one file per run).
+    ds = build_dataset(u_data, v_data, w_data, selected_heights,
+                       lats, lons, len(selected_times), t_interval, halo_cells,
+                       scalars=scalar_data)
+    outpath = savedir + '/' + testname + '.nc'
+    ds.to_netcdf(outpath,
+                 encoding={"time": {"units": "seconds since 1987-03-30 00:00:00"}})
+    print('File written: ', outpath, '| times', str(ds.time.values[0]),
+          '->', str(ds.time.values[-1]))
 
 # %%
 if __name__ == "__main__":

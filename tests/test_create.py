@@ -10,8 +10,9 @@ import sys
 import types
 
 import numpy as np
-import netCDF4 as nc
+import xarray as xr
 import pytest
+from parcels import FieldSet, SphericalMesh
 
 # create_nc_venus reads config at import time, but config.py is gitignored and
 # machine-specific. Use the real one when present; otherwise install a minimal
@@ -54,14 +55,15 @@ def test_heights_for_selects_by_level_count():
         create_nc_venus.heights_for(60)
 
 
-def test_make_file_roundtrip(tmp_path):
-    """ Write a small synthetic run through make_file and verify the file that
-        Parcels will actually read: metre-scale ascending Height axis with the
-        right metadata, and scalar fields (RHO) on the same dims as the winds. """
+def test_build_dataset_roundtrip(tmp_path):
+    """ Write a small synthetic run through build_dataset and verify the file that
+        Parcels will actually read: metre-scale ascending depth axis with the
+        right metadata, scalar fields (RHO) on the same dims as the winds, and
+        SGRID metadata that Parcels v4 accepts. """
     hghts = create_nc_venus.heights78[::20]  # spread subset, still metres
     lats = np.linspace(-60.0, 60.0, 3)
-    lons = np.linspace(-180.0, 180.0, 5)
-    n_t, time_len = 2, 3600
+    lons = np.linspace(-180.0, 180.0, 5, endpoint=False)
+    n_t, time_len, n_cells = 2, 3600, 1
     shape = (n_t, len(hghts), len(lats), len(lons))
 
     u = np.full(shape, 1.0, dtype=np.float32)
@@ -70,31 +72,34 @@ def test_make_file_roundtrip(tmp_path):
     rho = np.full(shape, 0.85, dtype=np.float32)
 
     path = tmp_path / 'roundtrip.nc'
-    ncout = nc.Dataset(path, 'w', format='NETCDF4')
-    create_nc_venus.make_file(ncout, u, v, w, hghts, lats, lons,
-                              n_t, time_len,
-                              scalars={'RHO': (rho, 'kg/m3')})
-    ncout.close()
+    ds = create_nc_venus.build_dataset(u, v, w, hghts, lats, lons,
+                                       n_t, time_len, n_cells,
+                                       scalars={'RHO': (rho, 'kg/m3')})
+    ds.to_netcdf(path, encoding={"time": {"units": "seconds since 1987-03-30 00:00:00"}})
 
-    ds = nc.Dataset(path)
+    ds = xr.open_dataset(path)
     try:
-        height = ds['Height']
-        h = height[:]
-        assert height.units == 'm'
-        assert height.positive == 'up'
+        depth = ds['depth']
+        h = depth.values
+        assert depth.attrs['units'] == 'm'
+        assert depth.attrs['positive'] == 'up'
         assert np.all(np.diff(h) > 0)
         assert h[-1] > 1.0e4, (
-            f"top of written Height axis is {h[-1]:g}; a metre-scale planetary "
+            f"top of written depth axis is {h[-1]:g}; a metre-scale planetary "
             "atmosphere file should extend beyond 10 km"
         )
         np.testing.assert_allclose(h, hghts, rtol=1e-6)
 
         for name in ('U', 'V', 'W', 'RHO'):
-            assert name in ds.variables, f"{name} missing from output file"
-            assert ds[name].dimensions == ('time', 'height', 'lat', 'lon')
-        assert ds['RHO'].units == 'kg/m3'
-        np.testing.assert_allclose(ds['RHO'][:], rho, rtol=1e-6)
+            assert name in ds.data_vars, f"{name} missing from output file"
+            assert ds[name].dims == ('time', 'height', 'lat', 'lon')
+        assert ds['RHO'].attrs['units'] == 'kg/m3'
+        np.testing.assert_allclose(ds['RHO'].values, 0.85, rtol=1e-6)
 
-        assert len(ds['Time'][:]) == n_t
+        assert ds.sizes['time'] == n_t
+        assert ds.sizes['lon'] == len(lons) + 2 * n_cells, "zonal halo missing"
+
+        fieldset = FieldSet.from_sgrid_conventions(ds, mesh=SphericalMesh(radius=6.0518e6))
+        assert 'RHO' in fieldset.fields
     finally:
         ds.close()
