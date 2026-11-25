@@ -28,7 +28,8 @@ def test_default_config_is_minimal_model():
 
 
 @pytest.mark.parametrize("switch, value", [("thermal_model", "one_node"), ("drag_model", "Re"),
-                                           ("area_model", "shape"), ("horizontal", "drag_lag")])
+                                           ("area_model", "shape"), ("horizontal", "drag_lag"),
+                                           ("balloon_type", "superpressure")])
 def test_planned_switch_values_raise(switch, value):
     with pytest.raises(NotImplementedError):
         ModelConfig(**{switch: value})
@@ -47,12 +48,27 @@ def test_balloon_vertical_params():
     assert p.M_atm / p.M_gas == pytest.approx(10.86, rel=1e-12)
 
 
+def test_balloon_vertical_overrides():
+    """ M_atm may be overridden; m_payload is derived from m_total, so passing
+        it is an error rather than being silently replaced. """
+    p = BalloonParams.balloon_vertical(m_total=62.0, m_gas_ZP=5.75, M_atm=43.45e-3)
+    assert p.M_atm == 43.45e-3
+    with pytest.raises(TypeError, match="m_payload"):
+        BalloonParams.balloon_vertical(m_total=62.0, m_gas_ZP=5.75, m_payload=10.0)
+
+
 def test_default_total_mass_and_gas_constants():
     p = BalloonParams()
     assert p.m_struct + p.m_gas_ZP + p.m_gas_SP == pytest.approx(62.0, abs=1e-12)
     assert p.M_gas == M_HE
     assert p.R_gas == pytest.approx(2077.3, rel=1e-4)
+    assert p.cv_gas == pytest.approx(1.5 * 8.314462618 / 4.0026e-3, rel=1e-12)
     assert p.cp_gas / p.cv_gas == pytest.approx(5.0 / 3.0)
+    assert p.R_atm == pytest.approx(8.314462618 / 43.45e-3, rel=1e-12)
+
+
+def test_struct_mass_includes_both_envelopes():
+    assert BalloonParams(m_env_SP=2.0).m_struct == pytest.approx(BalloonParams().m_struct + 2.0)
 
 
 def test_params_accept_per_particle_arrays():

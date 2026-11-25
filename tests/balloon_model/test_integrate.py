@@ -1,16 +1,19 @@
-""" Stage 1 integration tests: neutral buoyancy, analytic terminal velocity,
-    equilibrium altitude, zero relative velocity, and kernel scheme vs truth. """
+""" Integration tests of the isothermal model: neutral buoyancy, analytic
+    terminal velocity, equilibrium altitude, zero relative velocity, kernel
+    scheme vs truth, and input checks. """
 import numpy as np
 import pytest
 from balloon_model import state
 from balloon_model.params import BalloonParams, ModelConfig
 from balloon_model.environment import IsothermalAtmosphere, UniformAtmosphere, ProfileAtmosphere
-from balloon_model.integrate import integrate_truth, integrate_kernel_scheme, kernel_step, linearise
+from balloon_model.integrate import integrate_truth, integrate_kernel_scheme, kernel_step, linearise, DZ_PROBE
+from balloon_model import rhs as rhs_module
 
 P = BalloonParams()
 CFG = ModelConfig()
 M_TOT = P.m_struct + P.m_gas_ZP     # 62 kg
 DAY = 86400.0
+Z, W = state.IDX["z"], state.IDX["w"]
 
 
 def venus_isothermal(w=0.0):
@@ -31,9 +34,9 @@ def test_neutral_buoyancy_holds_for_a_day():
     z_eq = equilibrium_altitude(env)
     y0 = state.pack(z=z_eq, m_ZP=P.m_gas_ZP)
     _, Y = integrate_truth(env, y0, P, CFG, (0.0, DAY), t_eval=[DAY])
-    assert abs(Y[-1, state.IDX["z"], 0] - z_eq) < 1e-3
+    assert abs(Y[-1, Z, 0] - z_eq) < 1e-3
     _, Yk = integrate_kernel_scheme(env, y0, P, CFG, 0.0, 600.0, 144, 60)
-    assert np.max(np.abs(Yk[:, state.IDX["z"], 0] - z_eq)) < 1e-3
+    assert np.max(np.abs(Yk[:, Z, 0] - z_eq)) < 1e-3
 
 
 def terminal_solution(t, rho):
@@ -52,16 +55,17 @@ def terminal_solution(t, rho):
 def test_terminal_velocity_matches_analytic():
     """ Uniform density keeps the free-branch volume, and so the net force,
         constant. The truth integrator must follow the tanh solution to its
-        tolerance (1e-10 relative, so 1e-7 is a safe bound), and reach w_t. """
+        tolerance (1e-10 relative, so 1e-7 is a safe bound), and reach w_t.
+        Samples every 2 s resolve the approach, whose time scale tau is 14.6 s. """
     rho = 0.9    # Free branch: V = 69.4 m^3 < V_infl
     env = UniformAtmosphere(rho=rho, T=300.0, P=5e4)
-    t = np.linspace(0.0, 3600.0, 61)
+    t = np.arange(0.0, 3601.0, 2.0)
     y0 = state.pack(z=50000.0, m_ZP=P.m_gas_ZP)
     _, Y = integrate_truth(env, y0, P, CFG, (0.0, t[-1]), t_eval=t)
     w_t, w, dz = terminal_solution(t, rho)
-    np.testing.assert_allclose(Y[:, state.IDX["w"], 0], w, rtol=1e-7, atol=1e-10)
-    np.testing.assert_allclose(Y[:, state.IDX["z"], 0] - 50000.0, dz, rtol=1e-7, atol=1e-6)
-    assert Y[-1, state.IDX["w"], 0] == pytest.approx(w_t, rel=1e-9)
+    np.testing.assert_allclose(Y[:, W, 0], w, rtol=1e-7, atol=1e-10)
+    np.testing.assert_allclose(Y[:, Z, 0] - 50000.0, dz, rtol=1e-7, atol=1e-6)
+    assert Y[-1, W, 0] == pytest.approx(w_t, rel=1e-9)
 
 
 def test_settles_at_equilibrium_altitude():
@@ -74,7 +78,7 @@ def test_settles_at_equilibrium_altitude():
     z_eq = equilibrium_altitude(env)
     y0 = state.pack(z=z_eq - 2000.0, m_ZP=P.m_gas_ZP)
     t, Y = integrate_truth(env, y0, P, CFG, (0.0, DAY), t_eval=np.arange(0.0, DAY + 1, 60.0))
-    z = Y[:, state.IDX["z"], 0]
+    z = Y[:, Z, 0]
     assert z.max() - z_eq > 1.0                        # overshoot
     assert abs(z[-1] - z_eq) < 0.05                    # settled
     assert np.max(np.abs(z[t > 0.5 * DAY] - z_eq)) < 0.1
@@ -92,7 +96,7 @@ def test_zero_relative_velocity_is_finite(excess):
     m_gas = P.m_struct / (m_ratio - 1.0) * (1.0 + excess)
     y0 = state.pack(z=50000.0, w=0.3, m_ZP=m_gas)
     y, _ = kernel_step(y0, linearise(env, 0.0, state.get(y0, "z")), P, CFG, 600.0, 60)
-    w = y[state.IDX["w"], 0]
+    w = y[W, 0]
     assert np.all(np.isfinite(y))
     if excess == 0.0:
         assert w == pytest.approx(0.3, abs=1e-9)
@@ -116,8 +120,8 @@ def test_kernel_scheme_converges_to_truth_at_first_order():
         updraft, over 2 h of 600 s outer steps. The scheme freezes the drag
         coefficient and buoyancy over each substep and moves z with the
         end-of-substep velocity, so its error is first order: doubling the
-        substep count halves it (ratio 2 within 15% once in the asymptotic
-        range, n_sub >= 80). At the production n_sub = 60 the z error is
+        substep count halves the z and w errors (ratio 2 within 15% once in
+        the asymptotic range, n_sub >= 80). At the production n_sub = 60 the z error is
         below 10 m on a 2 km rise and the w error below 1e-3 m/s. """
     env = linear_density_env()
     slope = -0.854 / 6472.0
@@ -129,10 +133,11 @@ def test_kernel_scheme_converges_to_truth_at_first_order():
     errors = {}
     for n_sub in (60, 80, 160, 320):
         _, Yk = integrate_kernel_scheme(env, y0, P, CFG, 0.0, 600.0, int(T / 600), n_sub)
-        errors[n_sub] = (np.max(np.abs(Yk[:, 0, 0] - Y[:, 0, 0])), np.max(np.abs(Yk[:, 1, 0] - Y[:, 1, 0])))
+        errors[n_sub] = (np.max(np.abs(Yk[:, Z, 0] - Y[:, Z, 0])), np.max(np.abs(Yk[:, W, 0] - Y[:, W, 0])))
     assert errors[60][0] < 10.0 and errors[60][1] < 1e-3
     for n in (80, 160):
         assert errors[n][0] / errors[2 * n][0] == pytest.approx(2.0, rel=0.15)
+        assert errors[n][1] / errors[2 * n][1] == pytest.approx(2.0, rel=0.15)
 
 
 def test_kernel_scheme_density_linearisation_error_is_bounded():
@@ -148,8 +153,8 @@ def test_kernel_scheme_density_linearisation_error_is_bounded():
     t_eval = np.arange(0.0, DAY + 1, 600.0)
     _, Y = integrate_truth(env, y0, P, CFG, (0.0, DAY), t_eval=t_eval)
     _, Yk = integrate_kernel_scheme(env, y0, P, CFG, 0.0, 600.0, 144, 60)
-    assert np.max(np.abs(Yk[:, 0, 0] - Y[:, 0, 0])) < 20.0
-    assert abs(Yk[-1, 0, 0] - z_eq) < 0.05
+    assert np.max(np.abs(Yk[:, Z, 0] - Y[:, Z, 0])) < 20.0
+    assert abs(Yk[-1, Z, 0] - z_eq) < 0.05
 
 
 def test_kernel_step_vectorised_over_particles():
@@ -164,3 +169,60 @@ def test_kernel_step_vectorised_over_particles():
         yi0 = y0[:, i:i + 1]
         yi, _ = kernel_step(yi0, linearise(env, 0.0, z[i:i + 1]), P, CFG, 600.0, 60)
         np.testing.assert_array_equal(yi[:, 0], y[:, i])
+
+
+def test_linearise_near_profile_edges():
+    """ Within DZ_PROBE of either end of a profile the gradient is a one-sided
+        difference; for a density linear in z it is still exact. """
+    env = linear_density_env()
+    slope = -0.854 / 6472.0
+    z = np.array([40000.0, 40000.0 + 0.5 * DZ_PROBE, 55000.0, 70000.0 - 0.5 * DZ_PROBE, 70000.0])
+    np.testing.assert_allclose(linearise(env, 0.0, z).drho_dz, slope, rtol=1e-9)
+
+
+def test_truth_integrates_only_evolved_variables():
+    """ The solver passes the right-hand side only finite states, and the
+        variables the configuration does not evolve keep their initial values. """
+    env = venus_isothermal()
+    calls = {"nonfinite": 0}
+
+    class Checked:
+        def sample(self, t, z, lat=None, lon=None):
+            calls["nonfinite"] += int(not np.all(np.isfinite(z)))
+            return env.sample(t, z)
+
+    y0 = state.pack(z=equilibrium_altitude(env) - 500.0, m_ZP=P.m_gas_ZP, T_ZP=300.0, T_e1=290.0)
+    _, Y = integrate_truth(Checked(), y0, P, CFG, (0.0, 3600.0), t_eval=[0.0, 3600.0])
+    assert calls["nonfinite"] == 0
+    frozen = [i for name, i in state.IDX.items() if name not in rhs_module.evolved_variables(CFG)]
+    np.testing.assert_array_equal(Y[-1, frozen], y0[frozen])
+    assert Y[-1, Z, 0] != y0[Z, 0]
+
+
+def test_kernel_scheme_resamples_time_varying_environment():
+    """ Each outer step samples the environment at its own start time. """
+    class Gust:
+        def sample(self, t, z, lat=None, lon=None):
+            return UniformAtmosphere(rho=0.9, T=300.0, P=5e4, w=0.0 if t < 600.0 else 0.5).sample(t, z)
+
+    env = Gust()
+    y0 = state.pack(z=50000.0, m_ZP=P.m_gas_ZP)
+    _, Yk = integrate_kernel_scheme(env, y0, P, CFG, 0.0, 600.0, 2, 60)
+    y1, _ = kernel_step(y0, linearise(env, 0.0, state.get(y0, "z")), P, CFG, 600.0, 60)
+    y2, _ = kernel_step(y1, linearise(env, 600.0, state.get(y1, "z")), P, CFG, 600.0, 60)
+    np.testing.assert_array_equal(Yk[2], y2)
+
+
+@pytest.mark.parametrize("n_sub", [0, -1, 2.5])
+def test_kernel_step_rejects_bad_substep_count(n_sub):
+    env = UniformAtmosphere(rho=0.9, T=300.0, P=5e4)
+    y0 = state.pack(z=50000.0, m_ZP=P.m_gas_ZP)
+    with pytest.raises(ValueError, match="n_sub"):
+        kernel_step(y0, linearise(env, 0.0, state.get(y0, "z")), P, CFG, 600.0, n_sub)
+
+
+def test_kernel_step_rejects_zero_drag():
+    env = UniformAtmosphere(rho=0.9, T=300.0, P=5e4)
+    y0 = state.pack(z=50000.0, m_ZP=P.m_gas_ZP)
+    with pytest.raises(ValueError, match="C_D_top"):
+        kernel_step(y0, linearise(env, 0.0, state.get(y0, "z")), BalloonParams(C_D_top=0.0), CFG, 600.0, 60)

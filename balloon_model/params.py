@@ -20,9 +20,10 @@ M_HE = 4.0026e-3            # Molar mass of helium [kg mol^-1]
 class BalloonParams:
     # --- A. Craft specification ---
     # m_payload makes the total mass 62 kg, the value used by the existing
-    # balloon_vertical runs; the I24 gondola + control module alone is 26.5 kg.
+    # balloon_vertical runs; the gondola and control module of the Izraelevitz
+    # et al. (2024, J. Aircraft, preprint) prototype alone are 26.5 kg.
     m_payload: object = 34.95       # Gondola, payload and control module [kg]
-    m_env_ZP: object = 21.3         # ZP envelope [kg]; I24 gives 21.3 kg for both envelopes and fittings together
+    m_env_ZP: object = 21.3         # ZP envelope [kg]; Izraelevitz et al. (2024) give 21.3 kg for both envelopes and fittings together
     m_env_SP: object = 0.0          # SP envelope [kg]; included in m_env_ZP until the masses are known separately
     m_gas_ZP: object = 5.75         # Helium in the ZP balloon [kg]
     m_gas_SP: object = 0.0          # Helium in the SP balloon [kg]; no source value
@@ -44,7 +45,7 @@ class BalloonParams:
     r_IR: object = 0.0              # Infrared reflectance of a transparent film
     alpha_sol_SP: object = None     # SP solar absorptance; no source value
     eps_IR_SP: object = None        # SP infrared emissivity; no source value
-    c_env: object = 1200.0          # Envelope specific heat [J kg^-1 K^-1]; swept over 1000-2300
+    c_env: object = 1200.0          # Envelope specific heat [J kg^-1 K^-1]; a sweep default, swept over 1000-2300, not a measured value
 
     # --- C. Lifting gas ---
     M_gas: object = M_HE            # Molar mass of the lifting gas [kg mol^-1]
@@ -98,8 +99,11 @@ class BalloonParams:
         """ Parameters equivalent to the fieldset constants of the existing
             balloon_vertical kernel. That kernel takes the total mass as one
             number and the lift ratio as 10.86, so the payload absorbs the
-            difference and M_atm is set to give the same ratio. """
-        p = cls(m_gas_ZP=m_gas_ZP, M_atm=10.86 * M_HE, **overrides)
+            difference and M_atm is set to give the same ratio unless given. """
+        if "m_payload" in overrides:
+            raise TypeError("m_payload is derived from m_total; pass m_total instead")
+        overrides.setdefault("M_atm", 10.86 * overrides.get("M_gas", M_HE))
+        p = cls(m_gas_ZP=m_gas_ZP, **overrides)
         p.m_payload = m_total - (p.m_env_ZP + p.m_env_SP + p.m_gas_ZP + p.m_gas_SP)
         return p
 
@@ -118,7 +122,7 @@ PLANNED = {
     "thermal_model": ("one_node", "six_node"),
     "drag_model": ("Re",),
     "area_model": ("sphere", "shape"),
-    "balloon_type": ("balloon_in_balloon",),
+    "balloon_type": ("superpressure", "balloon_in_balloon"),
     "zp_overpressure": ("vent",),
     "horizontal": ("drag_lag",),
 }

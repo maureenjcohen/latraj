@@ -53,3 +53,13 @@ def test_rhs_tendencies():
     np.testing.assert_array_equal(d[state.IDX["w"]], expected)
     others = [i for n, i in state.IDX.items() if n not in ("z", "w")]
     assert np.all(d[others] == 0.0)
+
+
+def test_rhs_counts_superpressure_gas_in_mass():
+    """ Gas in the SP balloon adds to the mass but not to the ZP volume. """
+    env = UniformAtmosphere(rho=0.9, T=300.0, P=5e4)
+    y = state.pack(z=50000.0, m_ZP=5.75, m_SP=1.0)
+    d = rhs(0.0, y, P, CFG, env)
+    V = displaced_volume(5.75, 0.9, P, CFG)
+    expected = vertical_acceleration(0.0, 0.0, 0.9, V, P.m_struct + 6.75, P, CFG)
+    np.testing.assert_allclose(d[state.IDX["w"]], expected, rtol=1e-14)

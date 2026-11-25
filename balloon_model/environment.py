@@ -5,9 +5,11 @@
 
         rho [kg m^-3], T [K], P [Pa], u, v, w [m s^-1]
 
-    Later physics adds radiative keys (SW_dn, SW_up, SW_dir, LW_dn, LW_up,
-    SZA) to the same dict. Column environments ignore lat and lon. The
-    physics only ever calls sample(), so environments are interchangeable.
+    Physics that needs further fields (radiative fluxes, solar zenith angle)
+    reads them from the same dict. Column environments ignore lat and lon.
+    The physics only ever calls sample(), so environments are
+    interchangeable. An environment defined over a finite altitude range
+    exposes it as z_range = (z_min, z_max).
 """
 import numpy as np
 from .params import R_UNIVERSAL
@@ -18,7 +20,7 @@ def _full(value, z):
 
 
 class IsothermalAtmosphere:
-    """ Hydrostatic isothermal layer [E-DYN-2]: P = P_ref exp(-(z - z_ref)/H),
+    """ Hydrostatic isothermal layer: P = P_ref exp(-(z - z_ref)/H),
         H = R T / (M_a g), rho = P M_a / (R T). Uniform winds. """
 
     def __init__(self, T, P_ref, z_ref, M_atm, g, u=0.0, v=0.0, w=0.0):
@@ -63,16 +65,29 @@ class ProfileAtmosphere:
 
     def __init__(self, z_levels, **profiles):
         self.z = np.asarray(z_levels, dtype=np.float64)
-        if np.any(np.diff(self.z) <= 0):
-            raise ValueError("z_levels must increase strictly")
+        if self.z.ndim != 1 or self.z.size < 2:
+            raise ValueError("z_levels must be one-dimensional with at least two levels")
+        if not np.all(np.isfinite(self.z)) or np.any(np.diff(self.z) <= 0):
+            raise ValueError("z_levels must be finite and increase strictly")
         missing = set(self.KEYS) - set(profiles)
         if missing:
             raise ValueError(f"profiles missing: {sorted(missing)}")
-        self.profiles = {k: np.asarray(profiles[k], dtype=np.float64) for k in self.KEYS}
+        self.profiles = {}
+        for k in self.KEYS:
+            prof = np.asarray(profiles[k], dtype=np.float64)
+            if prof.shape != self.z.shape:
+                raise ValueError(f"profile {k} has shape {prof.shape}, z_levels {self.z.shape}")
+            if not np.all(np.isfinite(prof)):
+                raise ValueError(f"profile {k} has non-finite values")
+            self.profiles[k] = prof
+
+    @property
+    def z_range(self):
+        return self.z[0], self.z[-1]
 
     def sample(self, t, z, lat=None, lon=None):
         z = np.asarray(z, dtype=np.float64)
-        if np.any((z < self.z[0]) | (z > self.z[-1])):
+        if not np.all((z >= self.z[0]) & (z <= self.z[-1])):
             raise ValueError(f"altitude outside the profile [{self.z[0]}, {self.z[-1]}] m")
         return {k: np.interp(z, self.z, prof) for k, prof in self.profiles.items()}
 
@@ -81,7 +96,12 @@ class ProfileAtmosphere:
         """ Column at (lon, lat) from a dataset written by create_nc_venus:
             variables U, V, W, RHO, TEMP, PRES on (time, height, lat, lon) and
             the altitude coordinate depth [m] on height. The column is linearly
-            interpolated in lon and lat, as Parcels does on that grid. """
+            interpolated in lon and lat, as Parcels does on that grid; a
+            point outside the dataset's lon or lat range raises. """
+        for name, value in (("lon", lon), ("lat", lat)):
+            c = ds[name].values
+            if not c.min() <= value <= c.max():
+                raise ValueError(f"{name} = {value} outside the dataset range [{c.min()}, {c.max()}]")
         col = ds.isel(time=time_index).interp(lon=lon, lat=lat)
         z = np.asarray(col["depth"].values, dtype=np.float64)
         names = {"rho": "RHO", "T": "TEMP", "P": "PRES", "u": "U", "v": "V", "w": "W"}

@@ -57,7 +57,7 @@ def test_profile_exact_at_levels_and_linear_between():
     np.testing.assert_allclose(a["w"], [0.1, 0.2, 0.3, 0.15, 0.275], rtol=1e-14)
 
 
-@pytest.mark.parametrize("z", [49999.0, 54001.0])
+@pytest.mark.parametrize("z", [49999.0, 54001.0, np.nan])
 def test_profile_raises_outside(z):
     with pytest.raises(ValueError, match="outside"):
         profile_env().sample(0.0, np.array([z]))
@@ -68,24 +68,51 @@ def test_profile_rejects_bad_input():
         ProfileAtmosphere([1.0, 0.0], rho=[1, 1], T=[1, 1], P=[1, 1], u=[0, 0], v=[0, 0], w=[0, 0])
     with pytest.raises(ValueError, match="missing"):
         ProfileAtmosphere([0.0, 1.0], rho=[1, 1])
+    good = dict(rho=[1, 1], T=[1, 1], P=[1, 1], u=[0, 0], v=[0, 0], w=[0, 0])
+    for z in ([], [0.0], [0.0, np.nan]):
+        with pytest.raises(ValueError, match="z_levels"):
+            ProfileAtmosphere(z, **good)
+    with pytest.raises(ValueError, match="shape"):
+        ProfileAtmosphere([0.0, 1.0], **{**good, "T": [1, 1, 1]})
+    with pytest.raises(ValueError, match="non-finite"):
+        ProfileAtmosphere([0.0, 1.0], **{**good, "rho": [1, np.nan]})
 
 
-def test_profile_from_dataset():
-    """ A column read from a create_nc_venus-layout dataset is bilinear in
-        lon and lat and ordered by altitude. Fields are linear in lon, lat and
-        z, so the interpolated column is known exactly. """
+def test_profile_z_range():
+    assert profile_env().z_range == (50000.0, 54000.0)
+
+
+def column_dataset(z):
+    """ Dataset in the create_nc_venus layout, two time levels, with fields
+        linear in lon, lat and z (and +1 in every field at the second time),
+        so any interpolated column is known exactly. """
     lon = np.array([0.0, 10.0, 20.0])
     lat = np.array([-5.0, 0.0, 5.0])
-    z = np.array([48000.0, 50000.0, 52000.0])
     Z, LAT, LON = np.meshgrid(z, lat, lon, indexing="ij")
     def field(a, b, c):
-        return (["time", "height", "lat", "lon"], (a + b * LON + c * LAT + 1e-5 * Z)[None].astype(np.float32))
-    ds = xr.Dataset(
+        f = a + b * LON + c * LAT + 1e-5 * Z
+        return (["time", "height", "lat", "lon"], np.stack([f, f + 1.0]).astype(np.float32))
+    return xr.Dataset(
         {"RHO": field(1.0, 0.001, 0.002), "TEMP": field(300.0, 0.1, 0.0), "PRES": field(9e4, 1.0, 0.0),
          "U": field(-50.0, 0.0, 0.0), "V": field(0.0, 0.0, 0.1), "W": field(0.0, 0.0, 0.0)},
-        coords={"lon": lon, "lat": lat, "depth": ("height", z), "time": [0]})
-    env = ProfileAtmosphere.from_dataset(ds, lon=5.0, lat=2.5)
-    np.testing.assert_array_equal(env.z, z)
-    expected_rho = 1.0 + 0.001 * 5.0 + 0.002 * 2.5 + 1e-5 * z
+        coords={"lon": lon, "lat": lat, "depth": ("height", z), "time": [0, 1]})
+
+
+@pytest.mark.parametrize("time_index, offset", [(0, 0.0), (1, 1.0)])
+def test_profile_from_dataset(time_index, offset):
+    """ A column read from a create_nc_venus-layout dataset is bilinear in
+        lon and lat, taken at the requested time, and ordered by altitude
+        even when the file stores the levels top down. """
+    z = np.array([52000.0, 48000.0, 50000.0])
+    env = ProfileAtmosphere.from_dataset(column_dataset(z), lon=5.0, lat=2.5, time_index=time_index)
+    z_sorted = np.sort(z)
+    np.testing.assert_array_equal(env.z, z_sorted)
+    expected_rho = 1.0 + 0.001 * 5.0 + 0.002 * 2.5 + 1e-5 * z_sorted + offset
     np.testing.assert_allclose(env.profiles["rho"], expected_rho, rtol=1e-6)
-    np.testing.assert_allclose(env.profiles["v"], 0.25 + 1e-5 * z, rtol=1e-6)
+    np.testing.assert_allclose(env.profiles["v"], 0.25 + 1e-5 * z_sorted + offset, rtol=1e-6)
+
+
+@pytest.mark.parametrize("lon, lat", [(270.0, 0.0), (5.0, 30.0)])
+def test_profile_from_dataset_rejects_points_outside(lon, lat):
+    with pytest.raises(ValueError, match="outside the dataset"):
+        ProfileAtmosphere.from_dataset(column_dataset(np.array([48000.0, 50000.0])), lon=lon, lat=lat)

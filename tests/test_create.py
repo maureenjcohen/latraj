@@ -102,3 +102,9 @@ def test_build_dataset_roundtrip(tmp_path):
         assert 'RHO' in fieldset.fields
     finally:
         ds.close()
+
+
+@pytest.mark.parametrize("windunits, windtype, match", [("km/h", "W", "wind units"), ("m/s", "X", "wind type")])
+def test_process_data_rejects_bad_arguments(windunits, windtype, match):
+    with pytest.raises(ValueError, match=match):
+        create_nc_venus.process_data(np.zeros((1, 1, 1, 2)), windunits, windtype)

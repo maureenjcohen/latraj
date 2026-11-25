@@ -189,7 +189,7 @@ def process_data(windcube, windunits, windtype):
             print('Wind units are m/s, good to go')
             winddata = windcube[:,:,:,::-1]
         else:
-            print('Cannot parse wind units')
+            raise ValueError(f"Cannot parse wind units {windunits!r}; expected 'Pa/s' or 'm/s'")
     elif windtype=='V':
         print('Processing northward wind')
         winddata = windcube[:,:,:,::-1]
@@ -197,7 +197,7 @@ def process_data(windcube, windunits, windtype):
         print('Processing eastward wind')
         winddata = -windcube[:,:,:,::-1]
     else:
-        print('Invalid wind type, must be U, V, or W')
+        raise ValueError(f"Invalid wind type {windtype!r}, must be U, V, or W")
 
     return winddata
 # %%
