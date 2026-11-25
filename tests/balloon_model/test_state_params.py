@@ -6,8 +6,10 @@ from balloon_model.params import BalloonParams, ModelConfig, M_HE
 
 def test_state_layout_holds_full_model():
     """ The layout carries every prognostic variable of the full model: two gas
-        nodes, four envelope nodes and horizontal velocity. """
-    for name in ("z", "w", "u", "v", "m_ZP", "m_SP", "T_ZP", "T_SP", "T_e1", "T_e2", "T_e3", "T_e4"):
+        nodes, four envelope nodes, horizontal velocity and the convective gust
+        variable. """
+    for name in ("z", "w", "u", "v", "m_ZP", "m_SP", "T_ZP", "T_SP", "T_e1", "T_e2", "T_e3", "T_e4",
+                 "u_conv"):
         assert name in state.IDX
     assert state.N_STATE == len(state.STATE_VARS) == len(set(state.STATE_VARS))
 

@@ -19,9 +19,10 @@ M_HE = 4.0026e-3            # Molar mass of helium [kg mol^-1]
 @dataclass
 class BalloonParams:
     # --- A. Craft specification ---
-    # m_payload makes the total mass 62 kg, the value used by the existing
-    # balloon_vertical runs; the gondola and control module of the Izraelevitz
-    # et al. (2024, J. Aircraft, preprint) prototype alone are 26.5 kg.
+    # m_payload makes the total mass 62 kg, so the ZP balloon is just full at
+    # 0.854 kg/m^3 (about 55.6 km on Venus, inside the convective cloud layer).
+    # Izraelevitz et al. (2024, J. Aircraft, preprint) give no total mass; their
+    # gondola and control module alone are 26.5 kg, so the rest acts as ballast.
     m_payload: object = 34.95       # Gondola, payload and control module [kg]
     m_env_ZP: object = 21.3         # ZP envelope [kg]; Izraelevitz et al. (2024) give 21.3 kg for both envelopes and fittings together
     m_env_SP: object = 0.0          # SP envelope [kg]; included in m_env_ZP until the masses are known separately

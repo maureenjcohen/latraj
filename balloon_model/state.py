@@ -13,8 +13,13 @@ import numpy as np
 #   m_ZP, m_SP  lifting-gas mass in the zero-pressure and superpressure balloons
 #   T_ZP, T_SP  lifting-gas temperatures
 #   T_e1..T_e4  envelope node temperatures (one node uses T_e1 only)
+#   u_conv      convective gust variable [dimensionless], a unit-variance
+#               Ornstein-Uhlenbeck process; the gust added to the vertical
+#               wind is sigma * taper(z) * u_conv. Its statistics are those of
+#               the wind seen by a balloon drifting with the flow, so it is
+#               carried with the balloon rather than sampled from the air.
 STATE_VARS = ("z", "w", "u", "v", "m_ZP", "m_SP", "T_ZP", "T_SP",
-              "T_e1", "T_e2", "T_e3", "T_e4")
+              "T_e1", "T_e2", "T_e3", "T_e4", "u_conv")
 IDX = {name: i for i, name in enumerate(STATE_VARS)}
 N_STATE = len(STATE_VARS)
 
